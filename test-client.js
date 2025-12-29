@@ -90,7 +90,6 @@ async function testMediaUpload() {
   
   try {
     const FormData = require('form-data');
-    const fs = require('fs');
     
     // Create a test image buffer
     const testImageBuffer = Buffer.from('fake-image-data');

@@ -248,7 +248,12 @@ app.post('/control/mouse/scroll', async (req, res) => {
       return res.status(400).json({ error: 'Missing amount field' });
     }
     
-    await mouse.scrollDown(Math.abs(amount));
+    // Positive amount scrolls down, negative scrolls up
+    if (amount > 0) {
+      await mouse.scrollDown(amount);
+    } else if (amount < 0) {
+      await mouse.scrollUp(Math.abs(amount));
+    }
     
     res.json({ success: true, message: `Scrolled ${amount}` });
   } catch (error) {
@@ -298,10 +303,9 @@ app.get('/capture/screen/info', async (req, res) => {
   }
   
   try {
-    const screenSize = await screen.width().then(async (width) => {
-      const height = await screen.height();
-      return { width, height };
-    });
+    const width = await screen.width();
+    const height = await screen.height();
+    const screenSize = { width, height };
     
     res.json({ success: true, screen: screenSize });
   } catch (error) {
