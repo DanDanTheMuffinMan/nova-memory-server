@@ -76,7 +76,27 @@ const getOpenApiSpec = (serverUrl) => ({
             schema: { type: 'string' }
           }
         ],
-        responses: { 200: { description: 'Memory entries' } }
+        responses: {
+          200: {
+            description: 'Memory entries',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      topic: { type: 'string' },
+                      value: { type: 'string' },
+                      createdAt: { type: 'string', format: 'date-time' }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Missing userId' }
+        }
       },
       post: {
         operationId: 'storeMemory',
@@ -97,7 +117,20 @@ const getOpenApiSpec = (serverUrl) => ({
             }
           }
         },
-        responses: { 200: { description: 'Stored' } }
+        responses: {
+          200: {
+            description: 'Stored',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success'],
+                  properties: { success: { type: 'boolean' } }
+                }
+              }
+            }
+          }
+        }
       }
     },
     '/journal': {
@@ -112,7 +145,27 @@ const getOpenApiSpec = (serverUrl) => ({
             schema: { type: 'string' }
           }
         ],
-        responses: { 200: { description: 'Journal entries' } }
+        responses: {
+          200: {
+            description: 'Journal entries',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      title: { type: 'string' },
+                      content: { type: 'string' },
+                      createdAt: { type: 'string', format: 'date-time' }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Missing userId' }
+        }
       },
       post: {
         operationId: 'storeJournal',
@@ -133,7 +186,20 @@ const getOpenApiSpec = (serverUrl) => ({
             }
           }
         },
-        responses: { 200: { description: 'Stored' } }
+        responses: {
+          200: {
+            description: 'Stored',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success'],
+                  properties: { success: { type: 'boolean' } }
+                }
+              }
+            }
+          }
+        }
       }
     },
     '/control/keyboard/type': {
@@ -152,7 +218,25 @@ const getOpenApiSpec = (serverUrl) => ({
             }
           }
         },
-        responses: { 200: { description: 'Typed text' } }
+        responses: {
+          200: {
+            description: 'Typed text',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Missing text' },
+          503: { description: 'Peripheral control unavailable' }
+        }
       }
     },
     '/control/mouse/move': {
@@ -175,7 +259,25 @@ const getOpenApiSpec = (serverUrl) => ({
             }
           }
         },
-        responses: { 200: { description: 'Mouse moved' } }
+        responses: {
+          200: {
+            description: 'Mouse moved',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Missing coordinates' },
+          503: { description: 'Peripheral control unavailable' }
+        }
       }
     },
     '/control/mouse/click': {
@@ -183,7 +285,7 @@ const getOpenApiSpec = (serverUrl) => ({
         operationId: 'clickMouse',
         summary: 'Click mouse button',
         requestBody: {
-          required: true,
+          required: false,
           content: {
             'application/json': {
               schema: {
@@ -196,7 +298,24 @@ const getOpenApiSpec = (serverUrl) => ({
             }
           }
         },
-        responses: { 200: { description: 'Clicked' } }
+        responses: {
+          200: {
+            description: 'Clicked',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          503: { description: 'Peripheral control unavailable' }
+        }
       }
     },
     '/capture/screen': {
@@ -208,10 +327,19 @@ const getOpenApiSpec = (serverUrl) => ({
             name: 'format',
             in: 'query',
             required: false,
-            schema: { type: 'string', enum: ['png', 'jpg'] }
+            schema: { type: 'string', enum: ['png', 'jpg', 'jpeg'] }
           }
         ],
-        responses: { 200: { description: 'Image buffer' } }
+        responses: {
+          200: {
+            description: 'Binary image data',
+            content: {
+              'image/png': { schema: { type: 'string', format: 'binary' } },
+              'image/jpeg': { schema: { type: 'string', format: 'binary' } }
+            }
+          },
+          503: { description: 'Screen capture unavailable' }
+        }
       }
     },
     '/upload/image': {
@@ -235,7 +363,24 @@ const getOpenApiSpec = (serverUrl) => ({
             }
           }
         },
-        responses: { 200: { description: 'Uploaded' } }
+        responses: {
+          200: {
+            description: 'Uploaded',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message', 'mediaId'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' },
+                    mediaId: { type: 'integer' }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -407,7 +552,7 @@ app.post('/control/mouse/click', async (req, res) => {
   }
   
   try {
-    const { button, double } = req.body;
+    const { button, double } = req.body || {};
     
     const buttonMap = {
       'left': Button.LEFT,
@@ -480,9 +625,12 @@ app.get('/capture/screen', async (req, res) => {
   
   try {
     const { format } = req.query;
-    const img = await screenshot({ format: format || 'png' });
+    const requestedFormat = (format || 'png').toLowerCase();
+    const captureFormat = requestedFormat === 'jpeg' ? 'jpg' : requestedFormat;
+    const contentType = captureFormat === 'jpg' ? 'image/jpeg' : `image/${captureFormat}`;
+    const img = await screenshot({ format: captureFormat });
     
-    res.set('Content-Type', `image/${format || 'png'}`);
+    res.set('Content-Type', contentType);
     res.send(img);
   } catch (error) {
     res.status(500).json({ error: error.message });
