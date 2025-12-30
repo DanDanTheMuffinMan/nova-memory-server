@@ -119,6 +119,13 @@ curl http://localhost:3000/media?userId=test
 
 ## Using with Custom GPT
 
+The server now serves a live OpenAPI schema for action import. With the server running locally (`npm start`):
+
+1) Open the GPT builder → Actions → **Import from URL**  
+2) Paste `http://localhost:3000/openapi.json`  
+3) (Optional) Paste this message into ChatGPT or VS Code to enable Nova quickly:  
+   > Use the Nova Memory Server actions from http://localhost:3000/openapi.json. The server is running locally; it can read/write memory & journal entries, control keyboard/mouse, capture screenshots, and upload media.
+
 ### 1. Create OpenAPI Schema
 
 Save as `openapi.yaml`:

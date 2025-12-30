@@ -54,6 +54,193 @@ const memoryStore = {};
 const journalStore = {};
 const mediaStore = {}; // Store uploaded media references
 
+// Lightweight OpenAPI schema for Custom GPT / action import
+const getOpenApiSpec = (serverUrl) => ({
+  openapi: '3.0.0',
+  info: {
+    title: 'Nova Memory Server',
+    version: '1.0.0',
+    description: 'Actions for memory, journal, peripheral control, and capture'
+  },
+  servers: [{ url: serverUrl }],
+  paths: {
+    '/memory': {
+      get: {
+        operationId: 'getMemory',
+        summary: 'Retrieve memory entries',
+        parameters: [
+          {
+            name: 'userId',
+            in: 'query',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        responses: { 200: { description: 'Memory entries' } }
+      },
+      post: {
+        operationId: 'storeMemory',
+        summary: 'Store a memory entry',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['userId', 'topic', 'value'],
+                properties: {
+                  userId: { type: 'string' },
+                  topic: { type: 'string' },
+                  value: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Stored' } }
+      }
+    },
+    '/journal': {
+      get: {
+        operationId: 'getJournal',
+        summary: 'Retrieve journal entries',
+        parameters: [
+          {
+            name: 'userId',
+            in: 'query',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        responses: { 200: { description: 'Journal entries' } }
+      },
+      post: {
+        operationId: 'storeJournal',
+        summary: 'Store a journal entry',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['userId', 'title', 'content'],
+                properties: {
+                  userId: { type: 'string' },
+                  title: { type: 'string' },
+                  content: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Stored' } }
+      }
+    },
+    '/control/keyboard/type': {
+      post: {
+        operationId: 'typeText',
+        summary: 'Type text using keyboard',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['text'],
+                properties: { text: { type: 'string' } }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Typed text' } }
+      }
+    },
+    '/control/mouse/move': {
+      post: {
+        operationId: 'moveMouse',
+        summary: 'Move mouse cursor',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['x', 'y'],
+                properties: {
+                  x: { type: 'integer' },
+                  y: { type: 'integer' },
+                  smooth: { type: 'boolean' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Mouse moved' } }
+      }
+    },
+    '/control/mouse/click': {
+      post: {
+        operationId: 'clickMouse',
+        summary: 'Click mouse button',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  button: { type: 'string', enum: ['left', 'right', 'middle'] },
+                  double: { type: 'boolean' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Clicked' } }
+      }
+    },
+    '/capture/screen': {
+      get: {
+        operationId: 'captureScreen',
+        summary: 'Capture screenshot',
+        parameters: [
+          {
+            name: 'format',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', enum: ['png', 'jpg'] }
+          }
+        ],
+        responses: { 200: { description: 'Image buffer' } }
+      }
+    },
+    '/upload/image': {
+      post: {
+        operationId: 'uploadImage',
+        summary: 'Upload an image',
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['image', 'userId'],
+                properties: {
+                  image: { type: 'string', format: 'binary' },
+                  userId: { type: 'string' },
+                  source: { type: 'string' },
+                  description: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Uploaded' } }
+      }
+    }
+  }
+});
+
 // GET /memory?userId=123
 app.get('/memory', (req, res) => {
   const userId = req.query.userId;
@@ -86,6 +273,12 @@ app.post('/journal', (req, res) => {
   if (!journalStore[userId]) journalStore[userId] = [];
   journalStore[userId].push({ title, content, createdAt: new Date().toISOString() });
   res.json({ success: true });
+});
+
+// GET /openapi.json - Serve schema for Custom GPT actions
+app.get('/openapi.json', (req, res) => {
+  const serverUrl = `${req.protocol}://${req.get('host')}`;
+  res.json(getOpenApiSpec(serverUrl));
 });
 
 // Health check
