@@ -54,13 +54,26 @@ const memoryStore = {};
 const journalStore = {};
 const mediaStore = {}; // Store uploaded media references
 
+const errorResponse = (description) => ({
+  description,
+  content: {
+    'application/json': {
+      schema: {
+        type: 'object',
+        required: ['error'],
+        properties: { error: { type: 'string' } }
+      }
+    }
+  }
+});
+
 // Lightweight OpenAPI schema for Custom GPT / action import
 const getOpenApiSpec = (serverUrl) => ({
   openapi: '3.0.0',
   info: {
     title: 'Nova Memory Server',
     version: '1.0.0',
-    description: 'Actions for memory, journal, peripheral control, and capture'
+    description: 'Actions for memory, journal, peripheral control, and capture. Warning: peripheral endpoints allow keyboard/mouse control and screen capture; keep server on trusted/local networks.'
   },
   servers: [{ url: serverUrl }],
   paths: {
@@ -95,7 +108,8 @@ const getOpenApiSpec = (serverUrl) => ({
               }
             }
           },
-          400: { description: 'Missing userId' }
+          400: errorResponse('Missing userId'),
+          500: errorResponse('Internal server error')
         }
       },
       post: {
@@ -129,7 +143,9 @@ const getOpenApiSpec = (serverUrl) => ({
                 }
               }
             }
-          }
+          },
+          400: errorResponse('Missing required fields'),
+          500: errorResponse('Internal server error')
         }
       }
     },
@@ -164,7 +180,8 @@ const getOpenApiSpec = (serverUrl) => ({
               }
             }
           },
-          400: { description: 'Missing userId' }
+          400: errorResponse('Missing userId'),
+          500: errorResponse('Internal server error')
         }
       },
       post: {
@@ -198,7 +215,9 @@ const getOpenApiSpec = (serverUrl) => ({
                 }
               }
             }
-          }
+          },
+          400: errorResponse('Missing required fields'),
+          500: errorResponse('Internal server error')
         }
       }
     },
@@ -234,8 +253,9 @@ const getOpenApiSpec = (serverUrl) => ({
               }
             }
           },
-          400: { description: 'Missing text' },
-          503: { description: 'Peripheral control unavailable' }
+          400: errorResponse('Missing text'),
+          503: errorResponse('Peripheral control unavailable'),
+          500: errorResponse('Internal server error')
         }
       }
     },
@@ -275,8 +295,9 @@ const getOpenApiSpec = (serverUrl) => ({
               }
             }
           },
-          400: { description: 'Missing coordinates' },
-          503: { description: 'Peripheral control unavailable' }
+          400: errorResponse('Missing coordinates'),
+          503: errorResponse('Peripheral control unavailable'),
+          500: errorResponse('Internal server error')
         }
       }
     },
@@ -314,7 +335,8 @@ const getOpenApiSpec = (serverUrl) => ({
               }
             }
           },
-          503: { description: 'Peripheral control unavailable' }
+          503: errorResponse('Peripheral control unavailable'),
+          500: errorResponse('Internal server error')
         }
       }
     },
@@ -338,7 +360,9 @@ const getOpenApiSpec = (serverUrl) => ({
               'image/jpeg': { schema: { type: 'string', format: 'binary' } }
             }
           },
-          503: { description: 'Screen capture unavailable' }
+          400: errorResponse('Invalid format'),
+          503: errorResponse('Screen capture unavailable'),
+          500: errorResponse('Internal server error')
         }
       }
     },
@@ -379,7 +403,9 @@ const getOpenApiSpec = (serverUrl) => ({
                 }
               }
             }
-          }
+          },
+          400: errorResponse('Bad Request - missing userId or image file'),
+          500: errorResponse('Internal server error')
         }
       }
     }
@@ -626,6 +652,12 @@ app.get('/capture/screen', async (req, res) => {
   try {
     const { format } = req.query;
     const requestedFormat = (format || 'png').toLowerCase();
+    const allowedFormats = ['png', 'jpg', 'jpeg'];
+
+    if (format && !allowedFormats.includes(requestedFormat)) {
+      return res.status(400).json({ error: 'Invalid format. Supported formats are: png, jpg, jpeg.' });
+    }
+
     const captureFormat = requestedFormat === 'jpeg' ? 'jpg' : requestedFormat;
     const contentType = captureFormat === 'jpg' ? 'image/jpeg' : `image/${captureFormat}`;
     const img = await screenshot({ format: captureFormat });

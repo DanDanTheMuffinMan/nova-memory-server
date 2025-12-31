@@ -126,78 +126,7 @@ The server now serves a live OpenAPI schema for action import. With the server r
 3) (Optional) Paste this message into ChatGPT or VS Code to enable Nova quickly:  
    > Use the Nova Memory Server actions from http://localhost:3000/openapi.json. The server is running locally; it can read/write memory & journal entries, control keyboard/mouse, capture screenshots, and upload media.
 
-### 1. Create OpenAPI Schema
-
-Save as `openapi.yaml`:
-
-```yaml
-openapi: 3.0.0
-info:
-  title: Nova Memory Server
-  version: 1.0.0
-servers:
-  - url: http://localhost:3000
-paths:
-  /memory:
-    get:
-      operationId: getMemory
-      parameters:
-        - name: userId
-          in: query
-          required: true
-          schema:
-            type: string
-    post:
-      operationId: storeMemory
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                userId:
-                  type: string
-                topic:
-                  type: string
-                value:
-                  type: string
-  /control/keyboard/type:
-    post:
-      operationId: typeText
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                text:
-                  type: string
-  /control/mouse/move:
-    post:
-      operationId: moveMouse
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                x:
-                  type: integer
-                y:
-                  type: integer
-  /capture/screen:
-    get:
-      operationId: captureScreen
-```
-
-### 2. Configure Custom GPT
-
-1. Go to ChatGPT → Explore → Create a GPT
-2. In Configure → Actions → Import from URL
-3. Paste your OpenAPI schema
+Security note: The API can grant an AI full keyboard/mouse control and screen capture. Keep the server bound to localhost, don’t expose port 3000 to untrusted networks, and only connect GPTs/tools you trust.
 4. Test the actions!
 
 ## Using with AI Agents
