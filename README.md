@@ -43,6 +43,9 @@ Connect to WebSocket server at `ws://localhost:3000`
 - `screen-frame` event receives `{ image: base64, timestamp }` - Screen frame data
 - `stream-error` event receives `{ error }` - Stream error notifications
 
+### OpenAPI Schema for Custom GPTs
+- GET `/openapi.json` - Live schema you can import directly in ChatGPT/VS Code actions
+
 ## Installation
 
 ```bash

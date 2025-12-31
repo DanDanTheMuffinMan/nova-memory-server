@@ -54,6 +54,364 @@ const memoryStore = {};
 const journalStore = {};
 const mediaStore = {}; // Store uploaded media references
 
+const errorResponse = (description) => ({
+  description,
+  content: {
+    'application/json': {
+      schema: {
+        type: 'object',
+        required: ['error'],
+        properties: { error: { type: 'string' } }
+      }
+    }
+  }
+});
+
+// Lightweight OpenAPI schema for Custom GPT / action import
+const getOpenApiSpec = (serverUrl) => ({
+  openapi: '3.0.0',
+  info: {
+    title: 'Nova Memory Server',
+    version: '1.0.0',
+    description: 'Actions for memory, journal, peripheral control, and capture. Warning: peripheral endpoints allow keyboard/mouse control and screen capture; keep server on trusted/local networks.'
+  },
+  servers: [{ url: serverUrl }],
+  paths: {
+    '/memory': {
+      get: {
+        operationId: 'getMemory',
+        summary: 'Retrieve memory entries',
+        parameters: [
+          {
+            name: 'userId',
+            in: 'query',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        responses: {
+          200: {
+            description: 'Memory entries',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      topic: { type: 'string' },
+                      value: { type: 'string' },
+                      createdAt: { type: 'string', format: 'date-time' }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing userId'),
+          500: errorResponse('Internal server error')
+        }
+      },
+      post: {
+        operationId: 'storeMemory',
+        summary: 'Store a memory entry',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['userId', 'topic', 'value'],
+                properties: {
+                  userId: { type: 'string' },
+                  topic: { type: 'string' },
+                  value: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Stored',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success'],
+                  properties: { success: { type: 'boolean' } }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing required fields'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/journal': {
+      get: {
+        operationId: 'getJournal',
+        summary: 'Retrieve journal entries',
+        parameters: [
+          {
+            name: 'userId',
+            in: 'query',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        responses: {
+          200: {
+            description: 'Journal entries',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      title: { type: 'string' },
+                      content: { type: 'string' },
+                      createdAt: { type: 'string', format: 'date-time' }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing userId'),
+          500: errorResponse('Internal server error')
+        }
+      },
+      post: {
+        operationId: 'storeJournal',
+        summary: 'Store a journal entry',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['userId', 'title', 'content'],
+                properties: {
+                  userId: { type: 'string' },
+                  title: { type: 'string' },
+                  content: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Stored',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success'],
+                  properties: { success: { type: 'boolean' } }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing required fields'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/control/keyboard/type': {
+      post: {
+        operationId: 'typeText',
+        summary: 'Type text using keyboard',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['text'],
+                properties: { text: { type: 'string' } }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Typed text',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing text'),
+          503: errorResponse('Peripheral control unavailable'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/control/mouse/move': {
+      post: {
+        operationId: 'moveMouse',
+        summary: 'Move mouse cursor',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['x', 'y'],
+                properties: {
+                  x: { type: 'integer' },
+                  y: { type: 'integer' },
+                  smooth: { type: 'boolean' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Mouse moved',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing coordinates'),
+          503: errorResponse('Peripheral control unavailable'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/control/mouse/click': {
+      post: {
+        operationId: 'clickMouse',
+        summary: 'Click mouse button',
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  button: { type: 'string', enum: ['left', 'right', 'middle'] },
+                  double: { type: 'boolean' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Clicked',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          503: errorResponse('Peripheral control unavailable'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/capture/screen': {
+      get: {
+        operationId: 'captureScreen',
+        summary: 'Capture screenshot',
+        parameters: [
+          {
+            name: 'format',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', enum: ['png', 'jpg', 'jpeg'] }
+          }
+        ],
+        responses: {
+          200: {
+            description: 'Binary image data',
+            content: {
+              'image/png': { schema: { type: 'string', format: 'binary' } },
+              'image/jpeg': { schema: { type: 'string', format: 'binary' } }
+            }
+          },
+          400: errorResponse('Invalid format'),
+          503: errorResponse('Screen capture unavailable'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/upload/image': {
+      post: {
+        operationId: 'uploadImage',
+        summary: 'Upload an image',
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['image', 'userId'],
+                properties: {
+                  image: { type: 'string', format: 'binary' },
+                  userId: { type: 'string' },
+                  source: { type: 'string' },
+                  description: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Uploaded',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message', 'mediaId'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' },
+                    mediaId: { type: 'integer' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Bad Request - missing userId or image file'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    }
+  }
+});
+
 // GET /memory?userId=123
 app.get('/memory', (req, res) => {
   const userId = req.query.userId;
@@ -86,6 +444,12 @@ app.post('/journal', (req, res) => {
   if (!journalStore[userId]) journalStore[userId] = [];
   journalStore[userId].push({ title, content, createdAt: new Date().toISOString() });
   res.json({ success: true });
+});
+
+// GET /openapi.json - Serve schema for Custom GPT actions
+app.get('/openapi.json', (req, res) => {
+  const serverUrl = `${req.protocol}://${req.get('host')}`;
+  res.json(getOpenApiSpec(serverUrl));
 });
 
 // Health check
@@ -214,7 +578,7 @@ app.post('/control/mouse/click', async (req, res) => {
   }
   
   try {
-    const { button, double } = req.body;
+    const { button, double } = req.body || {};
     
     const buttonMap = {
       'left': Button.LEFT,
@@ -287,9 +651,18 @@ app.get('/capture/screen', async (req, res) => {
   
   try {
     const { format } = req.query;
-    const img = await screenshot({ format: format || 'png' });
+    const requestedFormat = (format || 'png').toLowerCase();
+    const allowedFormats = ['png', 'jpg', 'jpeg'];
+
+    if (format && !allowedFormats.includes(requestedFormat)) {
+      return res.status(400).json({ error: 'Invalid format. Supported formats are: png, jpg, jpeg.' });
+    }
+
+    const captureFormat = requestedFormat === 'jpeg' ? 'jpg' : requestedFormat;
+    const contentType = captureFormat === 'jpg' ? 'image/jpeg' : `image/${captureFormat}`;
+    const img = await screenshot({ format: captureFormat });
     
-    res.set('Content-Type', `image/${format || 'png'}`);
+    res.set('Content-Type', contentType);
     res.send(img);
   } catch (error) {
     res.status(500).json({ error: error.message });
