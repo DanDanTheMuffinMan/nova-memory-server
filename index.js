@@ -259,6 +259,51 @@ const getOpenApiSpec = (serverUrl) => ({
         }
       }
     },
+    '/control/keyboard/key': {
+      post: {
+        operationId: 'pressKey',
+        summary: 'Press a specific key with optional modifiers',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['key'],
+                properties: {
+                  key: { type: 'string', description: 'Key to press (e.g., "enter", "a", "f1")' },
+                  modifiers: { 
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Optional modifiers: leftcontrol, leftshift, leftalt, leftsuper'
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Key pressed',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing key'),
+          503: errorResponse('Peripheral control unavailable'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
     '/control/mouse/move': {
       post: {
         operationId: 'moveMouse',
@@ -340,6 +385,79 @@ const getOpenApiSpec = (serverUrl) => ({
         }
       }
     },
+    '/control/mouse/position': {
+      get: {
+        operationId: 'getMousePosition',
+        summary: 'Get current mouse cursor position',
+        responses: {
+          200: {
+            description: 'Mouse position',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['position'],
+                  properties: {
+                    position: {
+                      type: 'object',
+                      properties: {
+                        x: { type: 'integer' },
+                        y: { type: 'integer' }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          503: errorResponse('Peripheral control unavailable'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/control/mouse/scroll': {
+      post: {
+        operationId: 'scrollMouse',
+        summary: 'Scroll mouse wheel',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['amount'],
+                properties: {
+                  amount: { 
+                    type: 'integer',
+                    description: 'Scroll amount (negative for up, positive for down)'
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Scrolled',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing amount'),
+          503: errorResponse('Peripheral control unavailable'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
     '/capture/screen': {
       get: {
         operationId: 'captureScreen',
@@ -361,6 +479,30 @@ const getOpenApiSpec = (serverUrl) => ({
             }
           },
           400: errorResponse('Invalid format'),
+          503: errorResponse('Screen capture unavailable'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/capture/screen/info': {
+      get: {
+        operationId: 'getScreenInfo',
+        summary: 'Get screen dimensions',
+        responses: {
+          200: {
+            description: 'Screen dimensions',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    width: { type: 'integer' },
+                    height: { type: 'integer' }
+                  }
+                }
+              }
+            }
+          },
           503: errorResponse('Screen capture unavailable'),
           500: errorResponse('Internal server error')
         }
@@ -405,6 +547,87 @@ const getOpenApiSpec = (serverUrl) => ({
             }
           },
           400: errorResponse('Bad Request - missing userId or image file'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/upload/audio': {
+      post: {
+        operationId: 'uploadAudio',
+        summary: 'Upload an audio recording',
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['audio', 'userId'],
+                properties: {
+                  audio: { type: 'string', format: 'binary' },
+                  userId: { type: 'string' },
+                  description: { type: 'string' },
+                  duration: { type: 'number', description: 'Duration in seconds' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Uploaded',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message', 'mediaId'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' },
+                    mediaId: { type: 'integer' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Bad Request - missing userId or audio file'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/media': {
+      get: {
+        operationId: 'listMedia',
+        summary: 'List uploaded media for a user',
+        parameters: [
+          {
+            name: 'userId',
+            in: 'query',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        responses: {
+          200: {
+            description: 'Media list',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      mediaId: { type: 'integer' },
+                      type: { type: 'string' },
+                      source: { type: 'string' },
+                      description: { type: 'string' },
+                      createdAt: { type: 'string', format: 'date-time' }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing userId'),
           500: errorResponse('Internal server error')
         }
       }

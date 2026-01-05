@@ -471,6 +471,92 @@ const openApiSpec = {
         }
       }
     },
+    '/upload/image': {
+      post: {
+        operationId: 'uploadImage',
+        summary: 'Upload an image',
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['image', 'userId'],
+                properties: {
+                  image: { type: 'string', format: 'binary' },
+                  userId: { type: 'string' },
+                  source: { type: 'string' },
+                  description: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Uploaded',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message', 'mediaId'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' },
+                    mediaId: { type: 'integer' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Bad Request - missing userId or image file'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/upload/audio': {
+      post: {
+        operationId: 'uploadAudio',
+        summary: 'Upload an audio recording',
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['audio', 'userId'],
+                properties: {
+                  audio: { type: 'string', format: 'binary' },
+                  userId: { type: 'string' },
+                  description: { type: 'string' },
+                  duration: { type: 'number', description: 'Duration in seconds' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Uploaded',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'message', 'mediaId'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' },
+                    mediaId: { type: 'integer' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Bad Request - missing userId or audio file'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
     '/media': {
       get: {
         operationId: 'listMedia',
