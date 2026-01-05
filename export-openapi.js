@@ -13,8 +13,8 @@ try {
   // js-yaml is optional
 }
 
-// Import the getOpenApiSpec function from index.js
-// We'll generate the spec with a placeholder URL that users can customize
+// This script defines the OpenAPI schema directly (duplicating from index.js).
+// The duplication is intentional to allow standalone execution without server dependencies.
 const serverUrl = process.argv[2] || 'http://localhost:3000';
 
 // Define the same schema structure from index.js
@@ -359,8 +359,9 @@ const openApiSpec = {
               'application/json': {
                 schema: {
                   type: 'object',
-                  required: ['position'],
+                  required: ['success', 'position'],
                   properties: {
+                    success: { type: 'boolean' },
                     position: {
                       type: 'object',
                       properties: {
@@ -458,9 +459,16 @@ const openApiSpec = {
               'application/json': {
                 schema: {
                   type: 'object',
+                  required: ['success', 'screen'],
                   properties: {
-                    width: { type: 'integer' },
-                    height: { type: 'integer' }
+                    success: { type: 'boolean' },
+                    screen: {
+                      type: 'object',
+                      properties: {
+                        width: { type: 'integer' },
+                        height: { type: 'integer' }
+                      }
+                    }
                   }
                 }
               }

@@ -396,8 +396,9 @@ const getOpenApiSpec = (serverUrl) => ({
               'application/json': {
                 schema: {
                   type: 'object',
-                  required: ['position'],
+                  required: ['success', 'position'],
                   properties: {
+                    success: { type: 'boolean' },
                     position: {
                       type: 'object',
                       properties: {
@@ -495,9 +496,16 @@ const getOpenApiSpec = (serverUrl) => ({
               'application/json': {
                 schema: {
                   type: 'object',
+                  required: ['success', 'screen'],
                   properties: {
-                    width: { type: 'integer' },
-                    height: { type: 'integer' }
+                    success: { type: 'boolean' },
+                    screen: {
+                      type: 'object',
+                      properties: {
+                        width: { type: 'integer' },
+                        height: { type: 'integer' }
+                      }
+                    }
                   }
                 }
               }
