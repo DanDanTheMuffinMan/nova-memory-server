@@ -119,15 +119,30 @@ curl http://localhost:3000/media?userId=test
 
 ## Using with Custom GPT
 
-The server now serves a live OpenAPI schema for action import. With the server running locally (`npm start`):
+**⚠️ Important:** Custom GPTs run on OpenAI's servers and cannot access `http://localhost:3000` directly!
 
-1) Open the GPT builder → Actions → **Import from URL**  
-2) Paste `http://localhost:3000/openapi.json`  
-3) (Optional) Paste this message into ChatGPT or VS Code to enable Nova quickly:  
-   > Use the Nova Memory Server actions from http://localhost:3000/openapi.json. The server is running locally; it can read/write memory & journal entries, control keyboard/mouse, capture screenshots, and upload media.
+**For complete setup instructions, see [CUSTOM_GPT_SETUP.md](CUSTOM_GPT_SETUP.md)**
 
-Security note: The API can grant an AI full keyboard/mouse control and screen capture. Keep the server bound to localhost, don’t expose port 3000 to untrusted networks, and only connect GPTs/tools you trust.
-4. Test the actions!
+Quick options:
+
+### Option 1: Use a Tunnel Service (Easiest)
+```bash
+# Terminal 1
+npm start
+
+# Terminal 2
+ngrok http 3000  # or cloudflared tunnel --url http://localhost:3000
+```
+Then import from your tunnel URL: `https://YOUR-TUNNEL-URL/openapi.json`
+
+### Option 2: Export and Paste Schema
+```bash
+node export-openapi.js
+# Copy contents of openapi.json and paste into Custom GPT Actions
+```
+
+### Security Note
+The API can grant an AI full keyboard/mouse control and screen capture. Only use with tunnel services you trust, keep logs monitored, and understand the risks. See [CUSTOM_GPT_SETUP.md](CUSTOM_GPT_SETUP.md) for detailed security guidelines.
 
 ## Using with AI Agents
 

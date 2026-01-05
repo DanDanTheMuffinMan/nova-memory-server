@@ -2,6 +2,18 @@
 
 Express-based backend for storing and retrieving user memory, journal entries, and providing computer peripheral control and media capture capabilities for Nova (custom GPT) and AI agents.
 
+## 🚀 Quick Start with Custom GPT
+
+Want to give your ChatGPT the ability to control your computer, capture screenshots, and remember things? 
+
+**See [CUSTOM_GPT_SETUP.md](CUSTOM_GPT_SETUP.md) for complete setup instructions!**
+
+Quick overview:
+1. `npm install && npm start` - Start the server
+2. `ngrok http 3000` - Expose to the internet (or use the export script)
+3. Import the OpenAPI schema into your Custom GPT Actions
+4. Start chatting with an AI that can see and control your computer!
+
 ## Core Features
 
 ### Memory & Journal Storage
