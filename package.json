@@ -4,7 +4,8 @@
   "description": "Backend API for Nova's memory and journal storage",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "export-schema": "node export-openapi.js"
   },
   "dependencies": {
     "@nut-tree-fork/nut-js": "^4.2.6",
