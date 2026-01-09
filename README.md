@@ -17,7 +17,7 @@ Quick overview:
 ### 🔌 Reconnect your Nova Custom GPT (quick steps)
 1. Start the server: `npm start`
 2. Open a tunnel: `ngrok http 3000` (or any HTTPS tunnel) and copy the HTTPS URL
-3. In GPT Builder → Actions → **Import from URL**, paste `https://YOUR-TUNNEL/openapi.json`, then click **Import**
+3. In GPT Builder → Actions → **Import from URL**, paste `https://YOUR-NGROK-URL.ngrok.io/openapi.json`, then click **Import**
 4. Save the GPT and try a prompt like “Store this in memory: my Wi-Fi is NovaNet”
 
 - **No tunnel?** Run `node export-openapi.js http://localhost:3000` and paste the generated `openapi.json` into the Actions schema editor instead.
