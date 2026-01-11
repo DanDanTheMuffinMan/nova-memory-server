@@ -78,6 +78,10 @@ const canSyncToNotion = (type) => {
 const NOTION_RICH_TEXT_MAX_LENGTH = 2000;
 
 const buildRichTextContentArray = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return [{ text: { content: '' } }];
+  }
+  
   const text = String(value);
   if (text.length <= NOTION_RICH_TEXT_MAX_LENGTH) {
     return [{ text: { content: text } }];
@@ -114,7 +118,9 @@ const buildMemoryNotionProperties = ({ userId, topic, value, createdAt }) => {
   };
 
   // Only set topic property if it's different from title property to avoid duplication
-  if (notionConfig.memoryTopicProperty && notionConfig.memoryTopicProperty !== notionConfig.titleProperty) {
+  if (notionConfig.memoryTopicProperty && 
+      notionConfig.titleProperty &&
+      notionConfig.memoryTopicProperty !== notionConfig.titleProperty) {
     setRichTextProperty(properties, notionConfig.memoryTopicProperty, topic);
   }
   setRichTextProperty(properties, notionConfig.memoryValueProperty, value);
@@ -914,11 +920,16 @@ app.post('/memory', async (req, res) => {
   
   const response = { success: true };
   if (syncToNotion) {
-    const notionResult = await syncEntryToNotion('memory', { userId, topic, value, createdAt });
-    if (!notionResult.synced) {
-      console.error('Failed to sync memory entry to Notion:', notionResult.error);
+    try {
+      const notionResult = await syncEntryToNotion('memory', { userId, topic, value, createdAt });
+      if (!notionResult.synced) {
+        console.error('Failed to sync memory entry to Notion:', notionResult.error);
+      }
+      response.notion = notionResult;
+    } catch (error) {
+      console.error('Exception while syncing memory entry to Notion:', error.message);
+      response.notion = { synced: false, error: error.message };
     }
-    response.notion = notionResult;
   }
   res.json(response);
 });
@@ -941,11 +952,16 @@ app.post('/journal', async (req, res) => {
   
   const response = { success: true };
   if (syncToNotion) {
-    const notionResult = await syncEntryToNotion('journal', { userId, title, content, createdAt });
-    if (!notionResult.synced) {
-      console.error('Failed to sync journal entry to Notion:', notionResult.error);
+    try {
+      const notionResult = await syncEntryToNotion('journal', { userId, title, content, createdAt });
+      if (!notionResult.synced) {
+        console.error('Failed to sync journal entry to Notion:', notionResult.error);
+      }
+      response.notion = notionResult;
+    } catch (error) {
+      console.error('Exception while syncing journal entry to Notion:', error.message);
+      response.notion = { synced: false, error: error.message };
     }
-    response.notion = notionResult;
   }
   res.json(response);
 });
