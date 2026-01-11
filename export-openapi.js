@@ -602,6 +602,73 @@ const openApiSpec = {
           500: errorResponse('Internal server error')
         }
       }
+    },
+    '/bridge/entry': {
+      post: {
+        operationId: 'bridgeEntry',
+        summary: 'Store a memory/journal entry and optionally sync to UNOVA and Notion',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['userId', 'entryType'],
+                properties: {
+                  userId: { type: 'string' },
+                  entryType: { type: 'string', enum: ['memory', 'journal'] },
+                  topic: { type: 'string', description: 'Memory topic (required for memory)' },
+                  value: { type: 'string', description: 'Memory value (required for memory)' },
+                  title: { type: 'string', description: 'Journal title (required for journal)' },
+                  content: { type: 'string', description: 'Journal content (required for journal)' },
+                  tags: { type: 'array', items: { type: 'string' } },
+                  notion: {
+                    type: 'object',
+                    description: 'Optional Notion overrides',
+                    properties: {
+                      databaseId: { type: 'string' },
+                      titleProperty: { type: 'string' },
+                      tagsProperty: { type: 'string' },
+                      userProperty: { type: 'string' },
+                      entryTypeProperty: { type: 'string' },
+                      version: { type: 'string' }
+                    }
+                  },
+                  unova: {
+                    type: 'object',
+                    description: 'Optional UNOVA overrides',
+                    properties: {
+                      webhookUrl: { type: 'string' },
+                      apiKey: { type: 'string' },
+                      eventName: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Stored and synced',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    stored: { type: 'object' },
+                    notion: { type: 'object' },
+                    unova: { type: 'object' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing required fields'),
+          500: errorResponse('Internal server error')
+        }
+      }
     }
   }
 };

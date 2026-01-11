@@ -3,6 +3,7 @@ const cors = require('cors');
 const http = require('http');
 const socketIO = require('socket.io');
 const multer = require('multer');
+const axios = require('axios');
 
 const app = express();
 const server = http.createServer(app);
@@ -54,6 +55,9 @@ const memoryStore = {};
 const journalStore = {};
 const mediaStore = {}; // Store uploaded media references
 
+const NOTION_API_URL = 'https://api.notion.com/v1/pages';
+const DEFAULT_NOTION_VERSION = '2022-06-28';
+
 const errorResponse = (description) => ({
   description,
   content: {
@@ -66,6 +70,139 @@ const errorResponse = (description) => ({
     }
   }
 });
+
+const resolveNotionConfig = (overrides = {}) => ({
+  token: overrides.token || process.env.NOTION_TOKEN,
+  databaseId: overrides.databaseId || process.env.NOTION_DATABASE_ID,
+  titleProperty: overrides.titleProperty || process.env.NOTION_TITLE_PROPERTY || 'Name',
+  tagsProperty: overrides.tagsProperty || process.env.NOTION_TAGS_PROPERTY,
+  userProperty: overrides.userProperty || process.env.NOTION_USER_PROPERTY,
+  entryTypeProperty: overrides.entryTypeProperty || process.env.NOTION_ENTRY_TYPE_PROPERTY,
+  version: overrides.version || process.env.NOTION_VERSION || DEFAULT_NOTION_VERSION
+});
+
+const resolveUnovaConfig = (overrides = {}) => ({
+  webhookUrl: overrides.webhookUrl || process.env.UNOVA_WEBHOOK_URL,
+  apiKey: overrides.apiKey || process.env.UNOVA_API_KEY,
+  eventName: overrides.eventName || process.env.UNOVA_EVENT_NAME || 'nova.entry.created'
+});
+
+const buildNotionProperties = ({ title, tags, userId, entryType, config }) => {
+  const properties = {
+    [config.titleProperty]: {
+      title: [{ text: { content: title } }]
+    }
+  };
+
+  if (Array.isArray(tags) && tags.length && config.tagsProperty) {
+    properties[config.tagsProperty] = {
+      multi_select: tags.map((tag) => ({ name: tag }))
+    };
+  }
+
+  if (userId && config.userProperty) {
+    properties[config.userProperty] = {
+      rich_text: [{ text: { content: userId } }]
+    };
+  }
+
+  if (entryType && config.entryTypeProperty) {
+    properties[config.entryTypeProperty] = {
+      select: { name: entryType }
+    };
+  }
+
+  return properties;
+};
+
+const buildNotionChildren = ({ content }) => {
+  if (!content) return [];
+  return [
+    {
+      object: 'block',
+      type: 'paragraph',
+      paragraph: {
+        rich_text: [{ type: 'text', text: { content } }]
+      }
+    }
+  ];
+};
+
+const createNotionEntry = async ({ title, content, tags, userId, entryType, overrides }) => {
+  const config = resolveNotionConfig(overrides);
+  if (!config.token || !config.databaseId) {
+    return { enabled: false };
+  }
+
+  const properties = buildNotionProperties({ title, tags, userId, entryType, config });
+  const children = buildNotionChildren({ content });
+
+  try {
+    const response = await axios.post(
+      NOTION_API_URL,
+      {
+        parent: { database_id: config.databaseId },
+        properties,
+        children
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          'Notion-Version': config.version,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return {
+      enabled: true,
+      success: true,
+      pageId: response.data?.id,
+      url: response.data?.url
+    };
+  } catch (error) {
+    return {
+      enabled: true,
+      success: false,
+      error: error.response?.data || error.message
+    };
+  }
+};
+
+const sendUnovaEvent = async ({ payload, overrides }) => {
+  const config = resolveUnovaConfig(overrides);
+  if (!config.webhookUrl) {
+    return { enabled: false };
+  }
+
+  try {
+    const response = await axios.post(
+      config.webhookUrl,
+      {
+        event: config.eventName,
+        payload
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {})
+        }
+      }
+    );
+
+    return {
+      enabled: true,
+      success: true,
+      status: response.status
+    };
+  } catch (error) {
+    return {
+      enabled: true,
+      success: false,
+      error: error.response?.data || error.message
+    };
+  }
+};
 
 // Lightweight OpenAPI schema for Custom GPT / action import
 const getOpenApiSpec = (serverUrl) => ({
@@ -639,6 +776,73 @@ const getOpenApiSpec = (serverUrl) => ({
           500: errorResponse('Internal server error')
         }
       }
+    },
+    '/bridge/entry': {
+      post: {
+        operationId: 'bridgeEntry',
+        summary: 'Store a memory/journal entry and optionally sync to UNOVA and Notion',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['userId', 'entryType'],
+                properties: {
+                  userId: { type: 'string' },
+                  entryType: { type: 'string', enum: ['memory', 'journal'] },
+                  topic: { type: 'string', description: 'Memory topic (required for memory)' },
+                  value: { type: 'string', description: 'Memory value (required for memory)' },
+                  title: { type: 'string', description: 'Journal title (required for journal)' },
+                  content: { type: 'string', description: 'Journal content (required for journal)' },
+                  tags: { type: 'array', items: { type: 'string' } },
+                  notion: {
+                    type: 'object',
+                    description: 'Optional Notion overrides',
+                    properties: {
+                      databaseId: { type: 'string' },
+                      titleProperty: { type: 'string' },
+                      tagsProperty: { type: 'string' },
+                      userProperty: { type: 'string' },
+                      entryTypeProperty: { type: 'string' },
+                      version: { type: 'string' }
+                    }
+                  },
+                  unova: {
+                    type: 'object',
+                    description: 'Optional UNOVA overrides',
+                    properties: {
+                      webhookUrl: { type: 'string' },
+                      apiKey: { type: 'string' },
+                      eventName: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Stored and synced',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    stored: { type: 'object' },
+                    notion: { type: 'object' },
+                    unova: { type: 'object' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing required fields'),
+          500: errorResponse('Internal server error')
+        }
+      }
     }
   }
 });
@@ -1027,6 +1231,93 @@ app.get('/media/:userId/:mediaId', (req, res) => {
       createdAt: media.createdAt
     }
   });
+});
+
+// ============================================
+// BRIDGE ENDPOINTS (UNOVA + NOTION)
+// ============================================
+
+// POST /bridge/entry - Store memory/journal and sync to UNOVA/Notion
+app.post('/bridge/entry', async (req, res) => {
+  try {
+    const {
+      userId,
+      entryType,
+      topic,
+      value,
+      title,
+      content,
+      tags,
+      notion,
+      unova
+    } = req.body || {};
+
+    if (!userId || !entryType) {
+      return res.status(400).json({ error: 'Missing userId or entryType' });
+    }
+
+    let storedEntry = null;
+    let notionTitle = '';
+    let notionContent = '';
+
+    if (entryType === 'memory') {
+      if (!topic || !value) {
+        return res.status(400).json({ error: 'Missing topic or value for memory entry' });
+      }
+      if (!memoryStore[userId]) memoryStore[userId] = [];
+      storedEntry = { topic, value, createdAt: new Date().toISOString() };
+      memoryStore[userId].push(storedEntry);
+      notionTitle = title || topic;
+      notionContent = value;
+    } else if (entryType === 'journal') {
+      if (!title || !content) {
+        return res.status(400).json({ error: 'Missing title or content for journal entry' });
+      }
+      if (!journalStore[userId]) journalStore[userId] = [];
+      storedEntry = { title, content, createdAt: new Date().toISOString() };
+      journalStore[userId].push(storedEntry);
+      notionTitle = title;
+      notionContent = content;
+    } else {
+      return res.status(400).json({ error: 'Invalid entryType. Use "memory" or "journal".' });
+    }
+
+    const [notionResult, unovaResult] = await Promise.all([
+      createNotionEntry({
+        title: notionTitle,
+        content: notionContent,
+        tags,
+        userId,
+        entryType,
+        overrides: notion || {}
+      }),
+      sendUnovaEvent({
+        payload: {
+          userId,
+          entryType,
+          topic,
+          value,
+          title,
+          content,
+          tags,
+          storedAt: storedEntry.createdAt
+        },
+        overrides: unova || {}
+      })
+    ]);
+
+    res.json({
+      success: true,
+      stored: {
+        entryType,
+        entry: storedEntry
+      },
+      notion: notionResult,
+      unova: unovaResult
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================
