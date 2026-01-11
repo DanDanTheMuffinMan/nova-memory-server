@@ -75,10 +75,27 @@ const canSyncToNotion = (type) => {
   return false;
 };
 
+const NOTION_RICH_TEXT_MAX_LENGTH = 2000;
+
+const buildRichTextContentArray = (value) => {
+  const text = String(value);
+  if (text.length <= NOTION_RICH_TEXT_MAX_LENGTH) {
+    return [{ text: { content: text } }];
+  }
+
+  const chunks = [];
+  for (let i = 0; i < text.length; i += NOTION_RICH_TEXT_MAX_LENGTH) {
+    chunks.push({
+      text: { content: text.slice(i, i + NOTION_RICH_TEXT_MAX_LENGTH) }
+    });
+  }
+  return chunks;
+};
+
 const setRichTextProperty = (properties, name, value) => {
   if (!name || value === undefined || value === null || value === '') return;
   properties[name] = {
-    rich_text: [{ text: { content: String(value) } }]
+    rich_text: buildRichTextContentArray(value)
   };
 };
 
@@ -96,7 +113,10 @@ const buildMemoryNotionProperties = ({ userId, topic, value, createdAt }) => {
     }
   };
 
-  setRichTextProperty(properties, notionConfig.memoryTopicProperty, topic);
+  // Only set topic property if it's different from title property to avoid duplication
+  if (notionConfig.memoryTopicProperty && notionConfig.memoryTopicProperty !== notionConfig.titleProperty) {
+    setRichTextProperty(properties, notionConfig.memoryTopicProperty, topic);
+  }
   setRichTextProperty(properties, notionConfig.memoryValueProperty, value);
   setRichTextProperty(properties, notionConfig.userIdProperty, userId);
   setDateProperty(properties, notionConfig.createdAtProperty, createdAt);
@@ -119,6 +139,9 @@ const buildJournalNotionProperties = ({ userId, title, content, createdAt }) => 
 };
 
 const createNotionPage = async ({ databaseId, properties }) => {
+  if (!notion) {
+    throw new Error('Notion client is not initialized. Please check NOTION_TOKEN configuration.');
+  }
   const response = await notion.pages.create({
     parent: { database_id: databaseId },
     properties
@@ -888,8 +911,16 @@ app.post('/memory', async (req, res) => {
   if (!memoryStore[userId]) memoryStore[userId] = [];
   const createdAt = new Date().toISOString();
   memoryStore[userId].push({ topic, value, createdAt });
-  const notionResult = syncToNotion ? await syncEntryToNotion('memory', { userId, topic, value, createdAt }) : undefined;
-  res.json({ success: true, notion: notionResult });
+  
+  const response = { success: true };
+  if (syncToNotion) {
+    const notionResult = await syncEntryToNotion('memory', { userId, topic, value, createdAt });
+    if (!notionResult.synced) {
+      console.error('Failed to sync memory entry to Notion:', notionResult.error);
+    }
+    response.notion = notionResult;
+  }
+  res.json(response);
 });
 
 // GET /journal?userId=123
@@ -907,8 +938,16 @@ app.post('/journal', async (req, res) => {
   if (!journalStore[userId]) journalStore[userId] = [];
   const createdAt = new Date().toISOString();
   journalStore[userId].push({ title, content, createdAt });
-  const notionResult = syncToNotion ? await syncEntryToNotion('journal', { userId, title, content, createdAt }) : undefined;
-  res.json({ success: true, notion: notionResult });
+  
+  const response = { success: true };
+  if (syncToNotion) {
+    const notionResult = await syncEntryToNotion('journal', { userId, title, content, createdAt });
+    if (!notionResult.synced) {
+      console.error('Failed to sync journal entry to Notion:', notionResult.error);
+    }
+    response.notion = notionResult;
+  }
+  res.json(response);
 });
 
 // GET /notion/status - Check Notion config
