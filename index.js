@@ -3,6 +3,7 @@ const cors = require('cors');
 const http = require('http');
 const socketIO = require('socket.io');
 const multer = require('multer');
+const { Client: NotionClient } = require('@notionhq/client');
 
 const app = express();
 const server = http.createServer(app);
@@ -53,6 +54,96 @@ if (hasDisplay) {
 const memoryStore = {};
 const journalStore = {};
 const mediaStore = {}; // Store uploaded media references
+
+const notionConfig = {
+  token: process.env.NOTION_TOKEN,
+  memoryDatabaseId: process.env.NOTION_MEMORY_DATABASE_ID || process.env.NOTION_DATABASE_ID,
+  journalDatabaseId: process.env.NOTION_JOURNAL_DATABASE_ID || process.env.NOTION_DATABASE_ID,
+  titleProperty: process.env.NOTION_TITLE_PROPERTY || 'Name',
+  memoryTopicProperty: process.env.NOTION_MEMORY_TOPIC_PROPERTY || 'Topic',
+  memoryValueProperty: process.env.NOTION_MEMORY_VALUE_PROPERTY || 'Value',
+  journalContentProperty: process.env.NOTION_JOURNAL_CONTENT_PROPERTY || 'Content',
+  userIdProperty: process.env.NOTION_USER_ID_PROPERTY || 'UserId',
+  createdAtProperty: process.env.NOTION_CREATED_AT_PROPERTY || 'CreatedAt'
+};
+const notion = notionConfig.token ? new NotionClient({ auth: notionConfig.token }) : null;
+
+const canSyncToNotion = (type) => {
+  if (!notion) return false;
+  if (type === 'memory') return Boolean(notionConfig.memoryDatabaseId);
+  if (type === 'journal') return Boolean(notionConfig.journalDatabaseId);
+  return false;
+};
+
+const setRichTextProperty = (properties, name, value) => {
+  if (!name || value === undefined || value === null || value === '') return;
+  properties[name] = {
+    rich_text: [{ text: { content: String(value) } }]
+  };
+};
+
+const setDateProperty = (properties, name, value) => {
+  if (!name || !value) return;
+  properties[name] = {
+    date: { start: value }
+  };
+};
+
+const buildMemoryNotionProperties = ({ userId, topic, value, createdAt }) => {
+  const properties = {
+    [notionConfig.titleProperty]: {
+      title: [{ text: { content: topic || 'Memory' } }]
+    }
+  };
+
+  setRichTextProperty(properties, notionConfig.memoryTopicProperty, topic);
+  setRichTextProperty(properties, notionConfig.memoryValueProperty, value);
+  setRichTextProperty(properties, notionConfig.userIdProperty, userId);
+  setDateProperty(properties, notionConfig.createdAtProperty, createdAt);
+
+  return properties;
+};
+
+const buildJournalNotionProperties = ({ userId, title, content, createdAt }) => {
+  const properties = {
+    [notionConfig.titleProperty]: {
+      title: [{ text: { content: title || 'Journal Entry' } }]
+    }
+  };
+
+  setRichTextProperty(properties, notionConfig.journalContentProperty, content);
+  setRichTextProperty(properties, notionConfig.userIdProperty, userId);
+  setDateProperty(properties, notionConfig.createdAtProperty, createdAt);
+
+  return properties;
+};
+
+const createNotionPage = async ({ databaseId, properties }) => {
+  const response = await notion.pages.create({
+    parent: { database_id: databaseId },
+    properties
+  });
+  return response.id;
+};
+
+const syncEntryToNotion = async (type, payload) => {
+  if (!canSyncToNotion(type)) {
+    return { synced: false, error: 'Notion not configured' };
+  }
+
+  try {
+    const databaseId = type === 'memory'
+      ? notionConfig.memoryDatabaseId
+      : notionConfig.journalDatabaseId;
+    const properties = type === 'memory'
+      ? buildMemoryNotionProperties(payload)
+      : buildJournalNotionProperties(payload);
+    const pageId = await createNotionPage({ databaseId, properties });
+    return { synced: true, pageId };
+  } catch (error) {
+    return { synced: false, error: error.message };
+  }
+};
 
 const errorResponse = (description) => ({
   description,
@@ -125,7 +216,8 @@ const getOpenApiSpec = (serverUrl) => ({
                 properties: {
                   userId: { type: 'string' },
                   topic: { type: 'string' },
-                  value: { type: 'string' }
+                  value: { type: 'string' },
+                  syncToNotion: { type: 'boolean', description: 'Sync this entry to Notion if configured' }
                 }
               }
             }
@@ -139,7 +231,17 @@ const getOpenApiSpec = (serverUrl) => ({
                 schema: {
                   type: 'object',
                   required: ['success'],
-                  properties: { success: { type: 'boolean' } }
+                  properties: {
+                    success: { type: 'boolean' },
+                    notion: {
+                      type: 'object',
+                      properties: {
+                        synced: { type: 'boolean' },
+                        pageId: { type: 'string' },
+                        error: { type: 'string' }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -197,7 +299,8 @@ const getOpenApiSpec = (serverUrl) => ({
                 properties: {
                   userId: { type: 'string' },
                   title: { type: 'string' },
-                  content: { type: 'string' }
+                  content: { type: 'string' },
+                  syncToNotion: { type: 'boolean', description: 'Sync this entry to Notion if configured' }
                 }
               }
             }
@@ -211,12 +314,139 @@ const getOpenApiSpec = (serverUrl) => ({
                 schema: {
                   type: 'object',
                   required: ['success'],
-                  properties: { success: { type: 'boolean' } }
+                  properties: {
+                    success: { type: 'boolean' },
+                    notion: {
+                      type: 'object',
+                      properties: {
+                        synced: { type: 'boolean' },
+                        pageId: { type: 'string' },
+                        error: { type: 'string' }
+                      }
+                    }
+                  }
                 }
               }
             }
           },
           400: errorResponse('Missing required fields'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/notion/status': {
+      get: {
+        operationId: 'getNotionStatus',
+        summary: 'Check Notion integration status',
+        responses: {
+          200: {
+            description: 'Notion status',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['configured', 'missing'],
+                  properties: {
+                    configured: { type: 'boolean' },
+                    missing: { type: 'array', items: { type: 'string' } },
+                    databases: {
+                      type: 'object',
+                      properties: {
+                        memory: { type: 'boolean' },
+                        journal: { type: 'boolean' }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/notion/memory': {
+      post: {
+        operationId: 'syncMemoryToNotion',
+        summary: 'Create a Notion page for a memory entry',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['userId', 'topic', 'value'],
+                properties: {
+                  userId: { type: 'string' },
+                  topic: { type: 'string' },
+                  value: { type: 'string' },
+                  createdAt: { type: 'string', format: 'date-time' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Notion page created',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'pageId'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    pageId: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing required fields'),
+          503: errorResponse('Notion not configured'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/notion/journal': {
+      post: {
+        operationId: 'syncJournalToNotion',
+        summary: 'Create a Notion page for a journal entry',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['userId', 'title', 'content'],
+                properties: {
+                  userId: { type: 'string' },
+                  title: { type: 'string' },
+                  content: { type: 'string' },
+                  createdAt: { type: 'string', format: 'date-time' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Notion page created',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'pageId'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    pageId: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing required fields'),
+          503: errorResponse('Notion not configured'),
           500: errorResponse('Internal server error')
         }
       }
@@ -652,12 +882,14 @@ app.get('/memory', (req, res) => {
 });
 
 // POST /memory { userId, topic, value }
-app.post('/memory', (req, res) => {
-  const { userId, topic, value } = req.body;
+app.post('/memory', async (req, res) => {
+  const { userId, topic, value, syncToNotion } = req.body;
   if (!userId || !topic || !value) return res.status(400).json({ error: 'Missing fields' });
   if (!memoryStore[userId]) memoryStore[userId] = [];
-  memoryStore[userId].push({ topic, value, createdAt: new Date().toISOString() });
-  res.json({ success: true });
+  const createdAt = new Date().toISOString();
+  memoryStore[userId].push({ topic, value, createdAt });
+  const notionResult = syncToNotion ? await syncEntryToNotion('memory', { userId, topic, value, createdAt }) : undefined;
+  res.json({ success: true, notion: notionResult });
 });
 
 // GET /journal?userId=123
@@ -669,12 +901,67 @@ app.get('/journal', (req, res) => {
 });
 
 // POST /journal { userId, title, content }
-app.post('/journal', (req, res) => {
-  const { userId, title, content } = req.body;
+app.post('/journal', async (req, res) => {
+  const { userId, title, content, syncToNotion } = req.body;
   if (!userId || !title || !content) return res.status(400).json({ error: 'Missing fields' });
   if (!journalStore[userId]) journalStore[userId] = [];
-  journalStore[userId].push({ title, content, createdAt: new Date().toISOString() });
-  res.json({ success: true });
+  const createdAt = new Date().toISOString();
+  journalStore[userId].push({ title, content, createdAt });
+  const notionResult = syncToNotion ? await syncEntryToNotion('journal', { userId, title, content, createdAt }) : undefined;
+  res.json({ success: true, notion: notionResult });
+});
+
+// GET /notion/status - Check Notion config
+app.get('/notion/status', (req, res) => {
+  const missing = [];
+  if (!notionConfig.token) missing.push('NOTION_TOKEN');
+  if (!notionConfig.memoryDatabaseId) missing.push('NOTION_MEMORY_DATABASE_ID or NOTION_DATABASE_ID');
+  if (!notionConfig.journalDatabaseId) missing.push('NOTION_JOURNAL_DATABASE_ID or NOTION_DATABASE_ID');
+
+  res.json({
+    configured: missing.length === 0,
+    missing,
+    databases: {
+      memory: Boolean(notionConfig.memoryDatabaseId),
+      journal: Boolean(notionConfig.journalDatabaseId)
+    }
+  });
+});
+
+// POST /notion/memory - Create Notion page for memory entry
+app.post('/notion/memory', async (req, res) => {
+  const { userId, topic, value, createdAt } = req.body;
+  if (!userId || !topic || !value) return res.status(400).json({ error: 'Missing fields' });
+  if (!canSyncToNotion('memory')) {
+    return res.status(503).json({ error: 'Notion not configured' });
+  }
+
+  try {
+    const timestamp = createdAt || new Date().toISOString();
+    const properties = buildMemoryNotionProperties({ userId, topic, value, createdAt: timestamp });
+    const pageId = await createNotionPage({ databaseId: notionConfig.memoryDatabaseId, properties });
+    res.json({ success: true, pageId });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /notion/journal - Create Notion page for journal entry
+app.post('/notion/journal', async (req, res) => {
+  const { userId, title, content, createdAt } = req.body;
+  if (!userId || !title || !content) return res.status(400).json({ error: 'Missing fields' });
+  if (!canSyncToNotion('journal')) {
+    return res.status(503).json({ error: 'Notion not configured' });
+  }
+
+  try {
+    const timestamp = createdAt || new Date().toISOString();
+    const properties = buildJournalNotionProperties({ userId, title, content, createdAt: timestamp });
+    const pageId = await createNotionPage({ databaseId: notionConfig.journalDatabaseId, properties });
+    res.json({ success: true, pageId });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // GET /openapi.json - Serve schema for Custom GPT actions

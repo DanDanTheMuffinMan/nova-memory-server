@@ -320,6 +320,36 @@ await agent.typeText('Hello from AI!');
 await agent.pressKey('enter');
 ```
 
+### Pattern 5: Sync Memory & Journal to Notion
+
+```javascript
+const axios = require('axios');
+
+async function syncMemoryToNotion(serverUrl, entry) {
+  const response = await axios.post(`${serverUrl}/notion/memory`, {
+    userId: entry.userId,
+    topic: entry.topic,
+    value: entry.value,
+    createdAt: entry.createdAt
+  });
+
+  return response.data.pageId;
+}
+
+async function syncJournalToNotion(serverUrl, entry) {
+  const response = await axios.post(`${serverUrl}/notion/journal`, {
+    userId: entry.userId,
+    title: entry.title,
+    content: entry.content,
+    createdAt: entry.createdAt
+  });
+
+  return response.data.pageId;
+}
+```
+
+To auto-sync when storing memory/journal entries, set `syncToNotion: true` in the request body.
+
 ## Security Considerations
 
 ⚠️ **IMPORTANT:** This server provides powerful control over your computer. Use with caution:

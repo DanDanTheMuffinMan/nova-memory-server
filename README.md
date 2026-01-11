@@ -22,6 +22,12 @@ Quick overview:
 - `GET /journal?userId=...` - Retrieve journal entries
 - `POST /journal` with `{ userId, title, content }` - Store journal entry
 
+### Notion Bridge
+- `GET /notion/status` - Check Notion configuration
+- `POST /notion/memory` with `{ userId, topic, value }` - Create a Notion page for a memory entry
+- `POST /notion/journal` with `{ userId, title, content }` - Create a Notion page for a journal entry
+- Optional `syncToNotion: true` on `/memory` and `/journal` to sync entries automatically
+
 ### Keyboard Control
 - `POST /control/keyboard/type` with `{ text }` - Type text string
 - `POST /control/keyboard/key` with `{ key, modifiers }` - Press specific key(s)
@@ -147,3 +153,20 @@ fetch('http://localhost:3000/upload/image', {
 - Keyboard and mouse control requires appropriate system permissions.
 - Screen capture may require additional permissions on some operating systems.
 - WebSocket streaming can be resource-intensive; adjust FPS based on your needs.
+
+## Notion Configuration
+
+Set these environment variables to enable the Notion bridge:
+
+- `NOTION_TOKEN` - Notion integration token
+- `NOTION_MEMORY_DATABASE_ID` - Database ID for memory entries (or `NOTION_DATABASE_ID` for a shared database)
+- `NOTION_JOURNAL_DATABASE_ID` - Database ID for journal entries (or `NOTION_DATABASE_ID` for a shared database)
+
+Optional property overrides (defaults shown):
+
+- `NOTION_TITLE_PROPERTY` (`Name`)
+- `NOTION_MEMORY_TOPIC_PROPERTY` (`Topic`)
+- `NOTION_MEMORY_VALUE_PROPERTY` (`Value`)
+- `NOTION_JOURNAL_CONTENT_PROPERTY` (`Content`)
+- `NOTION_USER_ID_PROPERTY` (`UserId`)
+- `NOTION_CREATED_AT_PROPERTY` (`CreatedAt`)
