@@ -326,25 +326,37 @@ await agent.pressKey('enter');
 const axios = require('axios');
 
 async function syncMemoryToNotion(serverUrl, entry) {
-  const response = await axios.post(`${serverUrl}/notion/memory`, {
-    userId: entry.userId,
-    topic: entry.topic,
-    value: entry.value,
-    createdAt: entry.createdAt
-  });
+  try {
+    const response = await axios.post(`${serverUrl}/notion/memory`, {
+      userId: entry.userId,
+      topic: entry.topic,
+      value: entry.value,
+      createdAt: entry.createdAt
+    });
 
-  return response.data.pageId;
+    return response.data.pageId;
+  } catch (error) {
+    console.error('Failed to sync memory entry to Notion:', error);
+    // In production, consider retry logic or more robust error handling here.
+    throw error;
+  }
 }
 
 async function syncJournalToNotion(serverUrl, entry) {
-  const response = await axios.post(`${serverUrl}/notion/journal`, {
-    userId: entry.userId,
-    title: entry.title,
-    content: entry.content,
-    createdAt: entry.createdAt
-  });
+  try {
+    const response = await axios.post(`${serverUrl}/notion/journal`, {
+      userId: entry.userId,
+      title: entry.title,
+      content: entry.content,
+      createdAt: entry.createdAt
+    });
 
-  return response.data.pageId;
+    return response.data.pageId;
+  } catch (error) {
+    console.error('Failed to sync journal entry to Notion:', error);
+    // In production, consider retry logic or more robust error handling here.
+    throw error;
+  }
 }
 ```
 
