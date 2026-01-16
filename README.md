@@ -46,6 +46,12 @@ Quick overview:
 - `GET /media?userId=...` - List media metadata for user
 - `GET /media/:userId/:mediaId` - Retrieve specific media file with base64 data
 
+### UNOVA + Notion Bridge
+- `POST /bridge/entry` with `{ userId, entryType, ... }` - Store a memory/journal entry and sync to UNOVA + Notion
+  - Memory payload: `{ entryType: "memory", topic, value }`
+  - Journal payload: `{ entryType: "journal", title, content }`
+  - Optional: `tags`, `notion` overrides, `unova` overrides
+
 ### Real-Time Streaming (WebSocket)
 Connect to WebSocket server at `ws://localhost:3000`
 
@@ -63,6 +69,26 @@ Connect to WebSocket server at `ws://localhost:3000`
 ```bash
 npm install
 npm start
+```
+
+## UNOVA + Notion Configuration
+
+Set environment variables to enable sync:
+
+```bash
+# Notion
+NOTION_TOKEN=secret_xxx
+NOTION_DATABASE_ID=xxxxxxxxxxxx
+NOTION_TITLE_PROPERTY=Name
+# Optional property mappings
+NOTION_TAGS_PROPERTY=Tags
+NOTION_USER_PROPERTY=User
+NOTION_ENTRY_TYPE_PROPERTY=Entry Type
+
+# UNOVA
+UNOVA_WEBHOOK_URL=https://your-unova-endpoint.example.com/hooks
+UNOVA_API_KEY=your_api_key
+UNOVA_EVENT_NAME=nova.entry.created
 ```
 
 ## Usage Examples

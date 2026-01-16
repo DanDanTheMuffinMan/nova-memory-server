@@ -320,6 +320,38 @@ await agent.typeText('Hello from AI!');
 await agent.pressKey('enter');
 ```
 
+### Pattern 5: UNOVA + Notion Bridge
+
+Use the bridge endpoint to store memory/journal entries and push them into Notion or UNOVA.
+
+```javascript
+const axios = require('axios');
+
+const serverUrl = 'http://localhost:3000';
+
+await axios.post(`${serverUrl}/bridge/entry`, {
+  userId: 'user123',
+  entryType: 'memory',
+  topic: 'Preferred stack',
+  value: 'Next.js + Node.js',
+  tags: ['tech', 'stack']
+});
+
+await axios.post(`${serverUrl}/bridge/entry`, {
+  userId: 'user123',
+  entryType: 'journal',
+  title: 'UNOVA sync',
+  content: 'Pushed today’s summary to Notion and UNOVA.',
+  tags: ['daily', 'sync'],
+  notion: {
+    databaseId: 'your-notion-database-id'
+  },
+  unova: {
+    webhookUrl: 'https://your-unova-endpoint.example.com/hooks'
+  }
+});
+```
+
 ## Security Considerations
 
 ⚠️ **IMPORTANT:** This server provides powerful control over your computer. Use with caution:
