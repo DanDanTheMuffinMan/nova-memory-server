@@ -320,12 +320,50 @@ await agent.typeText('Hello from AI!');
 await agent.pressKey('enter');
 ```
 
+### Pattern 5: Sync Memory & Journal to Notion
 ### Pattern 5: UNOVA + Notion Bridge
 
 Use the bridge endpoint to store memory/journal entries and push them into Notion or UNOVA.
 
 ```javascript
 const axios = require('axios');
+
+async function syncMemoryToNotion(serverUrl, entry) {
+  try {
+    const response = await axios.post(`${serverUrl}/notion/memory`, {
+      userId: entry.userId,
+      topic: entry.topic,
+      value: entry.value,
+      createdAt: entry.createdAt
+    });
+
+    return response.data.pageId;
+  } catch (error) {
+    console.error('Failed to sync memory entry to Notion:', error);
+    // In production, consider retry logic or more robust error handling here.
+    throw error;
+  }
+}
+
+async function syncJournalToNotion(serverUrl, entry) {
+  try {
+    const response = await axios.post(`${serverUrl}/notion/journal`, {
+      userId: entry.userId,
+      title: entry.title,
+      content: entry.content,
+      createdAt: entry.createdAt
+    });
+
+    return response.data.pageId;
+  } catch (error) {
+    console.error('Failed to sync journal entry to Notion:', error);
+    // In production, consider retry logic or more robust error handling here.
+    throw error;
+  }
+}
+```
+
+To auto-sync when storing memory/journal entries, set `syncToNotion: true` in the request body.
 
 const serverUrl = 'http://localhost:3000';
 

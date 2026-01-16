@@ -88,7 +88,8 @@ const openApiSpec = {
                 properties: {
                   userId: { type: 'string' },
                   topic: { type: 'string' },
-                  value: { type: 'string' }
+                  value: { type: 'string' },
+                  syncToNotion: { type: 'boolean', description: 'Sync this entry to Notion if configured' }
                 }
               }
             }
@@ -102,7 +103,17 @@ const openApiSpec = {
                 schema: {
                   type: 'object',
                   required: ['success'],
-                  properties: { success: { type: 'boolean' } }
+                  properties: {
+                    success: { type: 'boolean' },
+                    notion: {
+                      type: 'object',
+                      properties: {
+                        synced: { type: 'boolean' },
+                        pageId: { type: 'string' },
+                        error: { type: 'string' }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -160,7 +171,8 @@ const openApiSpec = {
                 properties: {
                   userId: { type: 'string' },
                   title: { type: 'string' },
-                  content: { type: 'string' }
+                  content: { type: 'string' },
+                  syncToNotion: { type: 'boolean', description: 'Sync this entry to Notion if configured' }
                 }
               }
             }
@@ -174,12 +186,139 @@ const openApiSpec = {
                 schema: {
                   type: 'object',
                   required: ['success'],
-                  properties: { success: { type: 'boolean' } }
+                  properties: {
+                    success: { type: 'boolean' },
+                    notion: {
+                      type: 'object',
+                      properties: {
+                        synced: { type: 'boolean' },
+                        pageId: { type: 'string' },
+                        error: { type: 'string' }
+                      }
+                    }
+                  }
                 }
               }
             }
           },
           400: errorResponse('Missing required fields'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/notion/status': {
+      get: {
+        operationId: 'getNotionStatus',
+        summary: 'Check Notion integration status',
+        responses: {
+          200: {
+            description: 'Notion status',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['configured', 'missing'],
+                  properties: {
+                    configured: { type: 'boolean' },
+                    missing: { type: 'array', items: { type: 'string' } },
+                    databases: {
+                      type: 'object',
+                      properties: {
+                        memory: { type: 'boolean' },
+                        journal: { type: 'boolean' }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/notion/memory': {
+      post: {
+        operationId: 'syncMemoryToNotion',
+        summary: 'Create a Notion page for a memory entry',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['userId', 'topic', 'value'],
+                properties: {
+                  userId: { type: 'string' },
+                  topic: { type: 'string' },
+                  value: { type: 'string' },
+                  createdAt: { type: 'string', format: 'date-time' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Notion page created',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'pageId'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    pageId: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing required fields'),
+          503: errorResponse('Notion not configured'),
+          500: errorResponse('Internal server error')
+        }
+      }
+    },
+    '/notion/journal': {
+      post: {
+        operationId: 'syncJournalToNotion',
+        summary: 'Create a Notion page for a journal entry',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['userId', 'title', 'content'],
+                properties: {
+                  userId: { type: 'string' },
+                  title: { type: 'string' },
+                  content: { type: 'string' },
+                  createdAt: { type: 'string', format: 'date-time' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Notion page created',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'pageId'],
+                  properties: {
+                    success: { type: 'boolean' },
+                    pageId: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          400: errorResponse('Missing required fields'),
+          503: errorResponse('Notion not configured'),
           500: errorResponse('Internal server error')
         }
       }
