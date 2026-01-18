@@ -8,6 +8,19 @@ Want to give your ChatGPT the ability to control your computer, capture screensh
 
 **See [CUSTOM_GPT_SETUP.md](CUSTOM_GPT_SETUP.md) for complete setup instructions!**
 
+### 📋 Copy-paste message for Codex/ChatGPT
+Give the following message to your coding agent (Codex/ChatGPT) so it follows the README steps precisely:
+
+```
+You are my setup agent for the nova-memory-server project. Execute every step exactly as written in README.md:
+1) Run `npm install` in the repository root.
+2) Start the server with `npm start`.
+3) If external access is needed, open an HTTPS tunnel to port 3000 (e.g., `ngrok http 3000`) and capture the HTTPS base URL as {BASE_URL}.
+4) In ChatGPT GPT Builder → Actions, import the OpenAPI schema from {BASE_URL}/openapi.json. If no tunnel is available, run `node export-openapi.js {BASE_URL}` and paste the exported JSON.
+5) Ask me for any missing values (e.g., {BASE_URL}, NOTION/UNOVA environment variables) instead of inventing them.
+6) Confirm completion by reporting the server status and the base URL used, then provide a short example prompt (e.g., “Store this in memory: my Wi-Fi is NovaNet”).
+```
+
 Quick overview:
 1. `npm install && npm start` - Start the server
 2. `ngrok http 3000` - Expose to the internet (or use the export script)
