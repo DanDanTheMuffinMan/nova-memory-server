@@ -16,7 +16,7 @@ You are my setup agent for the nova-memory-server project. Execute every step ex
 1) Run `npm install` in the repository root.
 2) Start the server with `npm start`.
 3) If external access is needed, open an HTTPS tunnel to port 3000 (e.g., `ngrok http 3000`) and capture the HTTPS base URL as {BASE_URL}.
-4) In ChatGPT GPT Builder → Actions, import the OpenAPI schema from {BASE_URL}/openapi.json. If no tunnel is available, run `node export-openapi.js {BASE_URL}` and paste the exported JSON.
+4) In ChatGPT GPT Builder → Actions, import the OpenAPI schema from {BASE_URL}/openapi.json. If a tunnel is available, you may also run `node export-openapi.js {BASE_URL}` to embed that URL; if no tunnel exists yet, run `node export-openapi.js`, then set `servers[0].url` in the exported JSON to your HTTPS tunnel before importing.
 5) Ask me for any missing values (e.g., {BASE_URL}, NOTION/UNOVA environment variables) instead of inventing them.
 6) Confirm completion by reporting the server status and the base URL used, then provide a short example prompt (e.g., “Store this in memory: my Wi-Fi is NovaNet”).
 ```
