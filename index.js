@@ -4,6 +4,7 @@ const http = require('http');
 const socketIO = require('socket.io');
 const multer = require('multer');
 const { Client: NotionClient } = require('@notionhq/client');
+const { createApiSecurity } = require('./api-security');
 
 const app = express();
 const server = http.createServer(app);
@@ -21,6 +22,15 @@ const upload = multer({ storage: storage });
 
 app.use(cors());
 app.use(express.json());
+
+// Require a dedicated secret for every memory, capture, and control operation.
+// Keep only GET / and GET /openapi.json unauthenticated.
+const apiSecurity = createApiSecurity();
+app.use(apiSecurity.http);
+io.use(apiSecurity.socket);
+if (!apiSecurity.configured) {
+  console.warn('NOVA_MEMORY_API_KEY missing or too short; protected APIs and screen streams are disabled');
+}
 
 // Check if display is available and load peripheral control libraries conditionally
 let peripheralControlAvailable = false;
@@ -323,6 +333,8 @@ const sendUnovaEvent = async ({ payload, overrides }) => {
 // Lightweight OpenAPI schema for Custom GPT / action import
 const getOpenApiSpec = (serverUrl) => ({
   openapi: '3.0.0',
+  security: [{ bearerAuth: [] }],
+  components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },
   info: {
     title: 'Nova Memory Server',
     version: '1.0.0',
