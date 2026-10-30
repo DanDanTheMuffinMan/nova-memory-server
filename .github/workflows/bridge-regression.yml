@@ -1,0 +1,35 @@
+name: Bridge integration regression
+
+on:
+  pull_request:
+    paths:
+      - 'bridge-integrations.js'
+      - 'index.js'
+      - 'test/bridge-integrations.test.js'
+      - '.github/workflows/bridge-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'bridge-integrations.js'
+      - 'index.js'
+      - 'test/bridge-integrations.test.js'
+      - '.github/workflows/bridge-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bridge-integrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax-check service and integration module
+        run: |
+          node --check index.js
+          node --check bridge-integrations.js
+      - name: Run dependency-free integration regression tests
+        run: node --test test/bridge-integrations.test.js
