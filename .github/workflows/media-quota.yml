@@ -1,0 +1,34 @@
+name: Media quota regression
+
+on:
+  pull_request:
+    paths:
+      - 'index.js'
+      - 'media-limits.js'
+      - 'test/media-limits.test.js'
+      - '.github/workflows/media-quota.yml'
+  push:
+    paths:
+      - 'index.js'
+      - 'media-limits.js'
+      - 'test/media-limits.test.js'
+      - '.github/workflows/media-quota.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  media-quota:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check syntax and run quota regressions
+        run: |
+          node --check index.js
+          node --check media-limits.js
+          node --check test/media-limits.test.js
+          node --test test/media-limits.test.js
