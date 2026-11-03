@@ -3,6 +3,7 @@ const cors = require('cors');
 const http = require('http');
 const socketIO = require('socket.io');
 const multer = require('multer');
+const { MEDIA_FILE_LIMIT_BYTES, canAcceptMedia } = require('./media-limits');
 const { Client: NotionClient } = require('@notionhq/client');
 
 const app = express();
@@ -17,7 +18,21 @@ const port = process.env.PORT || 3000;
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+const upload = multer({ storage: storage, limits: { fileSize: MEDIA_FILE_LIMIT_BYTES } });
+
+// Multer's limit errors must not fall through to Express's default 500/HTML handler.
+const boundedUpload = (field) => (req, res, next) => {
+  upload.single(field)(req, res, (error) => {
+    if (!error) return next();
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'Media file exceeds 8 MiB limit' });
+    }
+    if (error instanceof multer.MulterError) {
+      return res.status(400).json({ error: 'Invalid media upload' });
+    }
+    return next(error);
+  });
+};
 
 app.use(cors());
 app.use(express.json());
@@ -53,7 +68,7 @@ if (hasDisplay) {
 // In-memory data store
 const memoryStore = {};
 const journalStore = {};
-const mediaStore = {}; // Store uploaded media references
+const mediaStore = Object.create(null); // Keep user IDs isolated from Object.prototype
 
 const notionConfig = {
   token: process.env.NOTION_TOKEN,
@@ -1464,11 +1479,13 @@ app.get('/capture/screen/info', async (req, res) => {
 // ============================================
 
 // POST /upload/image - Upload camera or screen image
-app.post('/upload/image', upload.single('image'), (req, res) => {
+app.post('/upload/image', boundedUpload('image'), (req, res) => {
   try {
     const { userId, description, source } = req.body;
     if (!userId) return res.status(400).json({ error: 'Missing userId' });
     if (!req.file) return res.status(400).json({ error: 'Missing image file' });
+    const capacity = canAcceptMedia(mediaStore, userId, req.file.size);
+    if (!capacity.ok) return res.status(capacity.status).json({ error: capacity.error });
     
     if (!mediaStore[userId]) mediaStore[userId] = [];
     
@@ -1495,11 +1512,13 @@ app.post('/upload/image', upload.single('image'), (req, res) => {
 });
 
 // POST /upload/audio - Upload microphone audio
-app.post('/upload/audio', upload.single('audio'), (req, res) => {
+app.post('/upload/audio', boundedUpload('audio'), (req, res) => {
   try {
     const { userId, description, duration } = req.body;
     if (!userId) return res.status(400).json({ error: 'Missing userId' });
     if (!req.file) return res.status(400).json({ error: 'Missing audio file' });
+    const capacity = canAcceptMedia(mediaStore, userId, req.file.size);
+    if (!capacity.ok) return res.status(capacity.status).json({ error: capacity.error });
     
     if (!mediaStore[userId]) mediaStore[userId] = [];
     
