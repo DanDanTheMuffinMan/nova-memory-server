@@ -19,8 +19,11 @@ function createBridgeIntegrations({
   });
   
   const resolveUnovaConfig = (overrides = {}) => ({
-    webhookUrl: overrides.webhookUrl || env.UNOVA_WEBHOOK_URL,
-    apiKey: overrides.apiKey || env.UNOVA_API_KEY,
+    // Outbound destination and server bearer token are operator-owned.
+    webhookUrl: env.UNOVA_WEBHOOK_URL,
+    apiKey: env.UNOVA_API_KEY,
+    rejectedDestination: Boolean(overrides.webhookUrl && overrides.webhookUrl !== env.UNOVA_WEBHOOK_URL),
+    rejectedKey: Boolean(overrides.apiKey && overrides.apiKey !== env.UNOVA_API_KEY),
     eventName: overrides.eventName || env.UNOVA_EVENT_NAME || 'nova.entry.created'
   });
   
@@ -108,6 +111,9 @@ function createBridgeIntegrations({
   
   const sendUnovaEvent = async ({ payload, overrides }) => {
     const config = resolveUnovaConfig(overrides);
+    if (config.rejectedDestination || config.rejectedKey) {
+      return { enabled: false, success: false, error: 'UNOVA webhook URL and API key must be configured on the server' };
+    }
     if (!config.webhookUrl) {
       return { enabled: false };
     }
