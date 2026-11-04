@@ -116,3 +116,52 @@ test('UNOVA remote failure returns a structured unsuccessful integration result'
   assert.equal(result.success, false);
   assert.equal(result.error, 'simulated webhook outage');
 });
+
+test('untrusted request URL cannot redirect server bearer token', async () => {
+  const calls = [];
+  const { sendUnovaEvent } = createBridgeIntegrations({
+    env: { UNOVA_WEBHOOK_URL: 'https://trusted.invalid/hook', UNOVA_API_KEY: 'server-only-test-key' },
+    post: async (...args) => { calls.push(args); return { status: 202 }; }
+  });
+  const result = await sendUnovaEvent({ payload: record, overrides: { webhookUrl: 'https://other.invalid/capture' } });
+  assert.equal(result.success, false);
+  assert.equal(calls.length, 0);
+});
+
+test('localhost request URL cannot invoke an internal network service', async () => {
+  let calls = 0;
+  const { sendUnovaEvent } = createBridgeIntegrations({
+    env: { UNOVA_API_KEY: 'server-only-test-key' },
+    post: async () => { calls++; return { status: 200 }; }
+  });
+  const result = await sendUnovaEvent({ payload: record, overrides: { webhookUrl: 'http://127.0.0.1:8765/private' } });
+  assert.equal(result.success, false);
+  assert.equal(calls, 0);
+});
+
+test('untrusted request API key cannot override server identity', async () => {
+  let calls = 0;
+  const { sendUnovaEvent } = createBridgeIntegrations({
+    env: { UNOVA_WEBHOOK_URL: 'https://trusted.invalid/hook', UNOVA_API_KEY: 'server-key' },
+    post: async () => { calls++; return { status: 202 }; }
+  });
+  const result = await sendUnovaEvent({ payload: record, overrides: { apiKey: 'request-key' } });
+  assert.equal(result.success, false);
+  assert.equal(calls, 0);
+});
+
+test('exact configured URL is allowed without changing server bearer token', async () => {
+  const calls = [];
+  const { sendUnovaEvent } = createBridgeIntegrations({
+    env: { UNOVA_WEBHOOK_URL: 'https://trusted.invalid/hook', UNOVA_API_KEY: 'server-key' },
+    post: async (...args) => { calls.push(args); return { status: 202 }; }
+  });
+  const result = await sendUnovaEvent({
+    payload: record, overrides: { webhookUrl: 'https://trusted.invalid/hook', eventName: 'nova.test' }
+  });
+  assert.equal(result.success, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'https://trusted.invalid/hook');
+  assert.equal(calls[0][1].event, 'nova.test');
+  assert.equal(calls[0][2].headers.Authorization, 'Bearer server-key');
+});
