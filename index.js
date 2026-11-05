@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const socketIO = require('socket.io');
+const { createScreenStream } = require('./screen-stream');
 const multer = require('multer');
 const { Client: NotionClient } = require('@notionhq/client');
 
@@ -1664,49 +1665,24 @@ app.post('/bridge/entry', async (req, res) => {
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
-  
-  let streamingInterval = null;
-  
-  // Start screen streaming
-  socket.on('start-screen-stream', async (data) => {
+
+  const stream = createScreenStream({
+    capture: ({ format }) => screenshot({ format }),
+    emit: (event, payload) => socket.emit(event, payload)
+  });
+
+  socket.on('start-screen-stream', (data) => {
     if (!peripheralControlAvailable) {
       socket.emit('stream-error', { error: 'Screen capture not available (no display)' });
       return;
     }
-    
-    const { fps = 1 } = data;
-    const interval = Math.floor(1000 / fps);
-    
-    console.log(`Starting screen stream for ${socket.id} at ${fps} fps`);
-    
-    streamingInterval = setInterval(async () => {
-      try {
-        const img = await screenshot({ format: 'jpg' });
-        socket.emit('screen-frame', {
-          image: img.toString('base64'),
-          timestamp: new Date().toISOString()
-        });
-      } catch (error) {
-        console.error('Screen capture error:', error);
-        socket.emit('stream-error', { error: error.message });
-      }
-    }, interval);
+    stream.start(data);
   });
-  
-  // Stop screen streaming
-  socket.on('stop-screen-stream', () => {
-    if (streamingInterval) {
-      clearInterval(streamingInterval);
-      streamingInterval = null;
-      console.log(`Stopped screen stream for ${socket.id}`);
-    }
-  });
-  
-  // Handle disconnection
+
+  socket.on('stop-screen-stream', () => stream.stop());
+
   socket.on('disconnect', () => {
-    if (streamingInterval) {
-      clearInterval(streamingInterval);
-    }
+    stream.stop();
     console.log('Client disconnected:', socket.id);
   });
 });
