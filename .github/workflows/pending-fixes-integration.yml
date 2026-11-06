@@ -1,0 +1,75 @@
+name: UNOVA pending fixes integration check
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pending-fixes-integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compose-drafts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Compose pending PRs in an ephemeral local Git worktree (never push)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "UNOVA integration check"
+          git config user.email "unova-integration-ci@example.invalid"
+          git fetch --no-tags origin main
+          git switch --detach FETCH_HEAD
+          ledger="systems/699f91d299d08191b461d5c6b9280c1b/ledger.md"
+          echo "## Pending memory-server draft compatibility" >> "$GITHUB_STEP_SUMMARY"
+          echo "Baseline main: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          for entry in \
+            "13 18e19b4c689a0ab6d4003310643b8b0eb7c85ed1" \
+            "14 55e2fb773d3fd34b2c83299d6e880b25e6e4acce" \
+            "16 0c832715e9285f22f6c4c69f2910769cb7c2a925" \
+            "15 41c3c5f154e2f56be079e425ebb5586d102dcac2" \
+            "17 9a0dbedee86582d9bc62b1e68326225ce601d83d"
+          do
+            read -r pr expected <<< "$entry"
+            git fetch --no-tags origin "refs/pull/$pr/head"
+            observed="$(git rev-parse FETCH_HEAD)"
+            echo "PR #$pr: $observed" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$observed" != "$expected" ]]; then
+              echo "::error title=Stale integration snapshot::PR #$pr changed from $expected to $observed"
+              exit 1
+            fi
+            if ! git merge --no-ff --no-edit FETCH_HEAD; then
+              mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+              if [[ "${#conflicts[@]}" -eq 1 && "${conflicts[0]}" == "$ledger" ]]; then
+                echo "Ignoring only the non-executable fingerprint-ledger merge conflict from PR #$pr" >> "$GITHUB_STEP_SUMMARY"
+                git checkout --ours -- "$ledger"
+                git add -- "$ledger"
+                git commit --no-edit
+              else
+                printf 'Unresolved conflicts after PR #%s:\n' "$pr" >&2
+                printf '%s\n' "${conflicts[@]}" >&2
+                printf 'Conflict after PR #%s: %s\n' "$pr" "${conflicts[*]}" >> "$GITHUB_STEP_SUMMARY"
+                echo "::error title=Cross-PR source conflict::Resolve the listed paths before merging any draft to main"
+                exit 1
+              fi
+            fi
+          done
+          echo "All five pending draft heads composed without source conflicts." >> "$GITHUB_STEP_SUMMARY"
+      - name: Check combined source and all regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check index.js
+          for module in api-security.js bridge-integrations.js media-limits.js screen-stream.js; do
+            test -f "$module"
+            node --check "$module"
+          done
+          node --test test/*.test.js
+          echo "All combined Node.js regression tests passed." >> "$GITHUB_STEP_SUMMARY"
