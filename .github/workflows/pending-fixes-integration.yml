@@ -45,7 +45,10 @@ jobs:
               echo "::error title=Stale integration snapshot::PR #$pr changed from $expected to $observed"
               exit 1
             fi
-            if ! git merge --no-ff --no-edit FETCH_HEAD; then
+            # Source conflict at the import/spec seam was proved on Nov 6.
+            # Prefer incoming version only within overlapping Git hunks, then
+            # explicitly restore/check EVERY earlier feature below. Never push.
+            if ! git merge --no-ff --no-edit -X theirs FETCH_HEAD; then
               mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
               if [[ "${#conflicts[@]}" -eq 1 && "${conflicts[0]}" == "$ledger" ]]; then
                 echo "Ignoring only the non-executable fingerprint-ledger merge conflict from PR #$pr" >> "$GITHUB_STEP_SUMMARY"
@@ -61,7 +64,82 @@ jobs:
               fi
             fi
           done
-          echo "All five pending draft heads composed without source conflicts." >> "$GITHUB_STEP_SUMMARY"
+          echo "All five pinned draft heads merged in the disposable checkout using guarded incoming-hunk resolution." >> "$GITHUB_STEP_SUMMARY"
+      - name: Restore validated independent imports and assert all five fixes survive
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('index.js')
+          source = p.read_text()
+          anchor = "const { Client: NotionClient } = require('@notionhq/client');\n"
+          if source.count(anchor) != 1:
+              raise SystemExit('index.js import anchor changed: review rather than auto-resolve')
+
+          # The five PRs all insert neighboring require() lines. Git's hunk
+          # preference can discard earlier imports. Restore only these exact,
+          # already-reviewed lines, never generalize to unknown conflicts.
+          imports = [
+              "const { createApiSecurity } = require('./api-security');",
+              "const { createBridgeIntegrations } = require('./bridge-integrations');",
+              "const { MEDIA_FILE_LIMIT_BYTES, canAcceptMedia } = require('./media-limits');",
+              "const { createScreenStream } = require('./screen-stream');",
+          ]
+          for line in imports:
+              if line not in source:
+                  source = source.replace(anchor, anchor + line + '\n', 1)
+
+          # The OpenAPI insertion is adjacent to the deleted bridge helper in
+          # #14; explicitly reinstate the #13 bearer-auth declaration if lost.
+          spec_anchor = "  openapi: '3.0.0',\n"
+          if source.count(spec_anchor) != 1:
+              raise SystemExit('OpenAPI anchor changed: manual review required')
+          if 'security: [{ bearerAuth: [] }]' not in source:
+              source = source.replace(
+                  spec_anchor,
+                  spec_anchor +
+                  "  security: [{ bearerAuth: [] }],\n" +
+                  "  components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },\n",
+                  1,
+              )
+
+          # No feature silently disappears merely because a three-way hunk
+          # favored the incoming PR. An unfamiliar edit fails CI closed.
+          required = {
+              'REST auth': 'app.use(apiSecurity.http);',
+              'Socket.IO auth': 'io.use(apiSecurity.socket);',
+              'auth factory': 'const apiSecurity = createApiSecurity();',
+              'bridge extraction': 'const { createNotionEntry, sendUnovaEvent } = createBridgeIntegrations();',
+              'bounded multipart': 'limits: { fileSize: MEDIA_FILE_LIMIT_BYTES }',
+              'bounded image': "app.post('/upload/image', boundedUpload('image')",
+              'bounded audio': "app.post('/upload/audio', boundedUpload('audio')",
+              'image capacity': 'canAcceptMedia(mediaStore, userId, req.file.size)',
+              'prototype-safe media': 'const mediaStore = Object.create(null)',
+              'screen lifecycle': 'const stream = createScreenStream({',
+              'screen stop': "socket.on('stop-screen-stream', () => stream.stop())",
+              'OpenAPI bearer': 'security: [{ bearerAuth: [] }]',
+          }
+          for name, marker in required.items():
+              if marker not in source:
+                  raise SystemExit(f'MISSING {name}: explicit manual conflict resolution required')
+          forbidden = [
+              'const resolveNotionConfig = (overrides = {}) =>',
+              'let streamingInterval = null;',
+          ]
+          for marker in forbidden:
+              if marker in source:
+                  raise SystemExit(f'STALE SOURCE: {marker}')
+          for line in imports:
+              if source.count(line) != 1:
+                  raise SystemExit(f'DUPLICATED/MISSING import: {line}')
+
+          p.write_text(source)
+          print('PASS: retained auth, bridge, media quota, screen lifecycle and OpenAPI guards')
+          PY
+          git diff --check
+          echo "Verified composition contracts before executing all tests." >> "$GITHUB_STEP_SUMMARY"
       - name: Check combined source and all regression tests
         shell: bash
         run: |
