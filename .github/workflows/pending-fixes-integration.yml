@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/pending-fixes-integration.yml"
+      - "test/runtime-smoke.cjs"
   workflow_dispatch:
 
 permissions:
@@ -151,3 +152,12 @@ jobs:
           done
           node --test test/*.test.js
           echo "All combined Node.js regression tests passed." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Exercise composed server via real loopback HTTP and Socket.IO
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+          node --check test/runtime-smoke.cjs
+          node test/runtime-smoke.cjs
+          echo "Real HTTP/Socket.IO smoke tests passed in disposable runner; no Mac, Notion or webhook contacted." >> "$GITHUB_STEP_SUMMARY"
