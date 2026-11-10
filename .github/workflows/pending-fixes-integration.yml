@@ -26,6 +26,8 @@ jobs:
           set -euo pipefail
           git config user.name "UNOVA integration check"
           git config user.email "unova-integration-ci@example.invalid"
+          # Preserve this PR-only smoke runner before detaching to main.
+          cp test/runtime-smoke.cjs "$RUNNER_TEMP/runtime-smoke.cjs"
           git fetch --no-tags origin main
           git switch --detach FETCH_HEAD
           ledger="systems/699f91d299d08191b461d5c6b9280c1b/ledger.md"
@@ -158,6 +160,7 @@ jobs:
         run: |
           set -euo pipefail
           npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+          cp "$RUNNER_TEMP/runtime-smoke.cjs" test/runtime-smoke.cjs
           node --check test/runtime-smoke.cjs
           node test/runtime-smoke.cjs
           echo "Real HTTP/Socket.IO smoke tests passed in disposable runner; no Mac, Notion or webhook contacted." >> "$GITHUB_STEP_SUMMARY"
