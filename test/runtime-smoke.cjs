@@ -37,14 +37,25 @@ function socketOutcome(authorized) {
       timeout: 4500,
       auth: authorized ? { token: secret } : {},
     });
-    const timer = setTimeout(() => { socket.disconnect(); reject(new Error('Socket.IO timeout')); }, 5500);
+    // Include the first capture outcome in the watchdog window; a connected
+    // socket without any frame/error must fail, not hang the CI job.
+    const timer = setTimeout(() => { socket.disconnect(); reject(new Error('Socket.IO capture timeout')); }, 10000);
     function finish(error, kind) {
-      clearTimeout(timer);
-      if (error) { socket.disconnect(); reject(error); return; }
-      if (!authorized) { socket.disconnect(); resolve(kind); return; }
+      if (error) { clearTimeout(timer); socket.disconnect(); reject(error); return; }
+      if (!authorized) { clearTimeout(timer); socket.disconnect(); resolve(kind); return; }
       socket.once('stream-error', ({ error: reason }) => {
+        clearTimeout(timer);
         socket.disconnect();
-        resolve(reason);
+        resolve('error:' + reason);
+      });
+      socket.once('screen-frame', ({ image }) => {
+        clearTimeout(timer);
+        socket.disconnect();
+        if (typeof image !== 'string' || image.length === 0) {
+          reject(new Error('Invalid screenshot frame'));
+        } else {
+          resolve('screen-frame');
+        }
       });
       socket.emit('start-screen-stream', { fps: 1 });
     }
@@ -101,8 +112,14 @@ async function main() {
     const rejected = await socketOutcome(false);
     check(rejected.startsWith('rejected:Unauthorized'), 'Socket.IO unauthenticated connection accepted: ' + rejected);
     const authenticated = await socketOutcome(true);
-    check(authenticated.includes('not available'), 'Expected authenticated stream-error without a display, received: ' + authenticated);
-    console.log('PASS: real HTTP auth, memory/bridge persistence, multipart size rejection, Socket.IO admission and no-display handler');
+    // macOS hosted runners may have a GUI session, may lack screen-recording
+    // permission, or may lack optional native capture dependencies. All three
+    // must preserve authenticated socket admission and a bounded outcome.
+    const expected = process.platform === 'darwin'
+      ? ['screen-frame', 'error:Screen capture failed', 'error:Screen capture not available (no display)']
+      : ['error:Screen capture not available (no display)'];
+    check(expected.includes(authenticated), 'Unexpected authenticated stream outcome: ' + authenticated);
+    console.log('PASS: ' + process.platform + ' real HTTP auth, memory/bridge persistence, multipart 413, Socket.IO admission; stream outcome=' + authenticated);
   } finally {
     if (server.exitCode === null) {
       server.kill('SIGTERM');
