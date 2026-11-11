@@ -11,8 +11,13 @@ permissions:
 
 jobs:
   compose-drafts:
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # Cross-platform execution on disposable GitHub-hosted machines.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,16 +57,17 @@ jobs:
             # Prefer incoming version only within overlapping Git hunks, then
             # explicitly restore/check EVERY earlier feature below. Never push.
             if ! git merge --no-ff --no-edit -X theirs FETCH_HEAD; then
-              mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
-              if [[ "${#conflicts[@]}" -eq 1 && "${conflicts[0]}" == "$ledger" ]]; then
+              # macOS's default Bash is 3.2 and does not support mapfile.
+              conflicts="$(git diff --name-only --diff-filter=U)"
+              if [[ "$conflicts" == "$ledger" ]]; then
                 echo "Ignoring only the non-executable fingerprint-ledger merge conflict from PR #$pr" >> "$GITHUB_STEP_SUMMARY"
                 git checkout --ours -- "$ledger"
                 git add -- "$ledger"
                 git commit --no-edit
               else
                 printf 'Unresolved conflicts after PR #%s:\n' "$pr" >&2
-                printf '%s\n' "${conflicts[@]}" >&2
-                printf 'Conflict after PR #%s: %s\n' "$pr" "${conflicts[*]}" >> "$GITHUB_STEP_SUMMARY"
+                printf '%s\n' "$conflicts" >&2
+                printf 'Conflict after PR #%s: %s\n' "$pr" "$conflicts" >> "$GITHUB_STEP_SUMMARY"
                 echo "::error title=Cross-PR source conflict::Resolve the listed paths before merging any draft to main"
                 exit 1
               fi
@@ -163,4 +169,4 @@ jobs:
           cp "$RUNNER_TEMP/runtime-smoke.cjs" test/runtime-smoke.cjs
           node --check test/runtime-smoke.cjs
           node test/runtime-smoke.cjs
-          echo "Real HTTP/Socket.IO smoke tests passed in disposable runner; no Mac, Notion or webhook contacted." >> "$GITHUB_STEP_SUMMARY"
+          echo "Real HTTP/Socket.IO smoke tests passed on $RUNNER_OS in a disposable hosted runner; no personal Mac, Notion or webhook contacted." >> "$GITHUB_STEP_SUMMARY"
