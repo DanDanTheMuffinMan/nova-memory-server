@@ -51,8 +51,10 @@ if (hasDisplay) {
 }
 
 // In-memory data store
-const memoryStore = {};
-const journalStore = {};
+// Use null-prototype maps: userId is caller-controlled and may equal '__proto__',
+// 'constructor', or other inherited Object property names.
+const memoryStore = Object.create(null);
+const journalStore = Object.create(null);
 const mediaStore = {}; // Store uploaded media references
 
 const notionConfig = {
