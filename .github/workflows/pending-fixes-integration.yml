@@ -43,7 +43,8 @@ jobs:
             "14 55e2fb773d3fd34b2c83299d6e880b25e6e4acce" \
             "16 0c832715e9285f22f6c4c69f2910769cb7c2a925" \
             "15 41c3c5f154e2f56be079e425ebb5586d102dcac2" \
-            "17 9a0dbedee86582d9bc62b1e68326225ce601d83d"
+            "17 9a0dbedee86582d9bc62b1e68326225ce601d83d" \
+            "19 8afe46a2b4c485ca845e645df46e29f06b86290e"
           do
             read -r pr expected <<< "$entry"
             git fetch --no-tags origin "refs/pull/$pr/head"
@@ -73,8 +74,8 @@ jobs:
               fi
             fi
           done
-          echo "All five pinned draft heads merged in the disposable checkout using guarded incoming-hunk resolution." >> "$GITHUB_STEP_SUMMARY"
-      - name: Restore validated independent imports and assert all five fixes survive
+          echo "All six pinned draft heads merged in the disposable checkout using guarded incoming-hunk resolution." >> "$GITHUB_STEP_SUMMARY"
+      - name: Restore validated independent imports and assert all six fixes survive
         shell: bash
         run: |
           set -euo pipefail
@@ -87,7 +88,7 @@ jobs:
           if source.count(anchor) != 1:
               raise SystemExit('index.js import anchor changed: review rather than auto-resolve')
 
-          # The five PRs all insert neighboring require() lines. Git's hunk
+          # The first five PRs insert neighboring require() lines. Git's hunk
           # preference can discard earlier imports. Restore only these exact,
           # already-reviewed lines, never generalize to unknown conflicts.
           imports = [
@@ -126,6 +127,8 @@ jobs:
               'bounded audio': "app.post('/upload/audio', boundedUpload('audio')",
               'image capacity': 'canAcceptMedia(mediaStore, userId, req.file.size)',
               'prototype-safe media': 'const mediaStore = Object.create(null)',
+              'prototype-safe memory': 'const memoryStore = Object.create(null);',
+              'prototype-safe journal': 'const journalStore = Object.create(null);',
               'screen lifecycle': 'const stream = createScreenStream({',
               'screen stop': "socket.on('stop-screen-stream', () => stream.stop())",
               'OpenAPI bearer': 'security: [{ bearerAuth: [] }]',
