@@ -115,6 +115,17 @@ jobs:
                   1,
               )
 
+          # PR #19 updates the same store-declarations hunk as PR #15.
+          # Incoming hunk preference can revert PR #15's null-prototype
+          # media map. Restore precisely the reviewed PR #15 declaration.
+          old_media = 'const mediaStore = {}; // Store uploaded media references'
+          if old_media in source:
+              source = source.replace(
+                  old_media,
+                  'const mediaStore = Object.create(null); // Keep user IDs isolated from Object.prototype',
+                  1,
+              )
+
           # No feature silently disappears merely because a three-way hunk
           # favored the incoming PR. An unfamiliar edit fails CI closed.
           required = {
