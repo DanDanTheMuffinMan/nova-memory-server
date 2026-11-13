@@ -1,0 +1,186 @@
+name: UNOVA pending fixes integration check
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pending-fixes-integration.yml"
+      - "test/runtime-smoke.cjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compose-drafts:
+    # Cross-platform execution on disposable GitHub-hosted machines.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Compose pending PRs in an ephemeral local Git worktree (never push)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "UNOVA integration check"
+          git config user.email "unova-integration-ci@example.invalid"
+          # Preserve this PR-only smoke runner before detaching to main.
+          cp test/runtime-smoke.cjs "$RUNNER_TEMP/runtime-smoke.cjs"
+          git fetch --no-tags origin main
+          git switch --detach FETCH_HEAD
+          ledger="systems/699f91d299d08191b461d5c6b9280c1b/ledger.md"
+          echo "## Pending memory-server draft compatibility" >> "$GITHUB_STEP_SUMMARY"
+          echo "Baseline main: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          for entry in \
+            "13 18e19b4c689a0ab6d4003310643b8b0eb7c85ed1" \
+            "14 55e2fb773d3fd34b2c83299d6e880b25e6e4acce" \
+            "16 0c832715e9285f22f6c4c69f2910769cb7c2a925" \
+            "15 41c3c5f154e2f56be079e425ebb5586d102dcac2" \
+            "17 9a0dbedee86582d9bc62b1e68326225ce601d83d" \
+            "19 8afe46a2b4c485ca845e645df46e29f06b86290e"
+          do
+            read -r pr expected <<< "$entry"
+            git fetch --no-tags origin "refs/pull/$pr/head"
+            observed="$(git rev-parse FETCH_HEAD)"
+            echo "PR #$pr: $observed" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$observed" != "$expected" ]]; then
+              echo "::error title=Stale integration snapshot::PR #$pr changed from $expected to $observed"
+              exit 1
+            fi
+            # Source conflict at the import/spec seam was proved on Nov 6.
+            # Prefer incoming version only within overlapping Git hunks, then
+            # explicitly restore/check EVERY earlier feature below. Never push.
+            if ! git merge --no-ff --no-edit -X theirs FETCH_HEAD; then
+              # macOS's default Bash is 3.2 and does not support mapfile.
+              conflicts="$(git diff --name-only --diff-filter=U)"
+              if [[ "$conflicts" == "$ledger" ]]; then
+                echo "Ignoring only the non-executable fingerprint-ledger merge conflict from PR #$pr" >> "$GITHUB_STEP_SUMMARY"
+                git checkout --ours -- "$ledger"
+                git add -- "$ledger"
+                git commit --no-edit
+              else
+                printf 'Unresolved conflicts after PR #%s:\n' "$pr" >&2
+                printf '%s\n' "$conflicts" >&2
+                printf 'Conflict after PR #%s: %s\n' "$pr" "$conflicts" >> "$GITHUB_STEP_SUMMARY"
+                echo "::error title=Cross-PR source conflict::Resolve the listed paths before merging any draft to main"
+                exit 1
+              fi
+            fi
+          done
+          echo "All six pinned draft heads merged in the disposable checkout using guarded incoming-hunk resolution." >> "$GITHUB_STEP_SUMMARY"
+      - name: Restore validated independent imports and assert all six fixes survive
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('index.js')
+          source = p.read_text()
+          anchor = "const { Client: NotionClient } = require('@notionhq/client');\n"
+          if source.count(anchor) != 1:
+              raise SystemExit('index.js import anchor changed: review rather than auto-resolve')
+
+          # The first five PRs insert neighboring require() lines. Git's hunk
+          # preference can discard earlier imports. Restore only these exact,
+          # already-reviewed lines, never generalize to unknown conflicts.
+          imports = [
+              "const { createApiSecurity } = require('./api-security');",
+              "const { createBridgeIntegrations } = require('./bridge-integrations');",
+              "const { MEDIA_FILE_LIMIT_BYTES, canAcceptMedia } = require('./media-limits');",
+              "const { createScreenStream } = require('./screen-stream');",
+          ]
+          for line in imports:
+              if line not in source:
+                  source = source.replace(anchor, anchor + line + '\n', 1)
+
+          # The OpenAPI insertion is adjacent to the deleted bridge helper in
+          # #14; explicitly reinstate the #13 bearer-auth declaration if lost.
+          spec_anchor = "  openapi: '3.0.0',\n"
+          if source.count(spec_anchor) != 1:
+              raise SystemExit('OpenAPI anchor changed: manual review required')
+          if 'security: [{ bearerAuth: [] }]' not in source:
+              source = source.replace(
+                  spec_anchor,
+                  spec_anchor +
+                  "  security: [{ bearerAuth: [] }],\n" +
+                  "  components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },\n",
+                  1,
+              )
+
+          # PR #19 updates the same store-declarations hunk as PR #15.
+          # Incoming hunk preference can revert PR #15's null-prototype
+          # media map. Restore precisely the reviewed PR #15 declaration.
+          old_media = 'const mediaStore = {}; // Store uploaded media references'
+          if old_media in source:
+              source = source.replace(
+                  old_media,
+                  'const mediaStore = Object.create(null); // Keep user IDs isolated from Object.prototype',
+                  1,
+              )
+
+          # No feature silently disappears merely because a three-way hunk
+          # favored the incoming PR. An unfamiliar edit fails CI closed.
+          required = {
+              'REST auth': 'app.use(apiSecurity.http);',
+              'Socket.IO auth': 'io.use(apiSecurity.socket);',
+              'auth factory': 'const apiSecurity = createApiSecurity();',
+              'bridge extraction': 'const { createNotionEntry, sendUnovaEvent } = createBridgeIntegrations();',
+              'bounded multipart': 'limits: { fileSize: MEDIA_FILE_LIMIT_BYTES }',
+              'bounded image': "app.post('/upload/image', boundedUpload('image')",
+              'bounded audio': "app.post('/upload/audio', boundedUpload('audio')",
+              'image capacity': 'canAcceptMedia(mediaStore, userId, req.file.size)',
+              'prototype-safe media': 'const mediaStore = Object.create(null)',
+              'prototype-safe memory': 'const memoryStore = Object.create(null);',
+              'prototype-safe journal': 'const journalStore = Object.create(null);',
+              'screen lifecycle': 'const stream = createScreenStream({',
+              'screen stop': "socket.on('stop-screen-stream', () => stream.stop())",
+              'OpenAPI bearer': 'security: [{ bearerAuth: [] }]',
+          }
+          for name, marker in required.items():
+              if marker not in source:
+                  raise SystemExit(f'MISSING {name}: explicit manual conflict resolution required')
+          forbidden = [
+              'const resolveNotionConfig = (overrides = {}) =>',
+              'let streamingInterval = null;',
+          ]
+          for marker in forbidden:
+              if marker in source:
+                  raise SystemExit(f'STALE SOURCE: {marker}')
+          for line in imports:
+              if source.count(line) != 1:
+                  raise SystemExit(f'DUPLICATED/MISSING import: {line}')
+
+          p.write_text(source)
+          print('PASS: retained auth, bridge, media quota, screen lifecycle and OpenAPI guards')
+          PY
+          git diff --check
+          echo "Verified composition contracts before executing all tests." >> "$GITHUB_STEP_SUMMARY"
+      - name: Check combined source and all regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check index.js
+          for module in api-security.js bridge-integrations.js media-limits.js screen-stream.js; do
+            test -f "$module"
+            node --check "$module"
+          done
+          node --test test/*.test.js
+          echo "All combined Node.js regression tests passed." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Exercise composed server via real loopback HTTP and Socket.IO
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+          cp "$RUNNER_TEMP/runtime-smoke.cjs" test/runtime-smoke.cjs
+          node --check test/runtime-smoke.cjs
+          node test/runtime-smoke.cjs
+          echo "Real HTTP/Socket.IO smoke tests passed on $RUNNER_OS in a disposable hosted runner; no personal Mac, Notion or webhook contacted." >> "$GITHUB_STEP_SUMMARY"
