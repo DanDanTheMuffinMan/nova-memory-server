@@ -96,6 +96,34 @@ async function main() {
     const memories = await (await request('/memory?userId=' + user, { headers: auth })).json();
     assert.deepEqual(memories.map(x => x.topic), ['smoke', 'bridge']);
 
+    // Confirm PR #19's fix against real HTTP routes in the composed checkout.
+    for (const specialId of ['__proto__', 'constructor', 'toString']) {
+      const encodedId = encodeURIComponent(specialId);
+      for (const item of [
+        { route: '/memory', payload: { userId: specialId, topic: 'proto-memory-' + specialId, value: 'ok' }, property: 'topic' },
+        { route: '/journal', payload: { userId: specialId, title: 'proto-journal-' + specialId, content: 'ok' }, property: 'title' },
+      ]) {
+        const emptySpecial = await (await request(item.route + '?userId=' + encodedId, { headers: auth })).json();
+        assert.deepEqual(emptySpecial, [], 'special ID must have empty own store: ' + item.route + '/' + specialId);
+        const savedSpecial = await (await request(item.route, {
+          method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+          body: JSON.stringify(item.payload),
+        })).json();
+        assert.equal(savedSpecial.success, true);
+        const found = await (await request(item.route + '?userId=' + encodedId, { headers: auth })).json();
+        assert.equal(found.length, 1, 'special ID should be isolated: ' + specialId);
+        assert.equal(found[0][item.property], item.payload[item.property]);
+      }
+    }
+    const specialBridge = await (await request('/bridge/entry', {
+      method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: 'hasOwnProperty', entryType: 'memory', topic: 'proto-bridge', value: 'ok' }),
+    })).json();
+    assert.equal(specialBridge.success, true);
+    const bridgeEntries = await (await request('/memory?userId=hasOwnProperty', { headers: auth })).json();
+    assert.deepEqual(bridgeEntries.map(entry => entry.topic), ['proto-bridge']);
+
+
     const small = new FormData();
     small.append('userId', user);
     small.append('image', new Blob([Buffer.from('mock-image')], { type: 'image/png' }), 'tiny.png');
@@ -119,7 +147,7 @@ async function main() {
       ? ['screen-frame', 'error:Screen capture failed', 'error:Screen capture not available (no display)']
       : ['error:Screen capture not available (no display)'];
     check(expected.includes(authenticated), 'Unexpected authenticated stream outcome: ' + authenticated);
-    console.log('PASS: ' + process.platform + ' real HTTP auth, memory/bridge persistence, multipart 413, Socket.IO admission; stream outcome=' + authenticated);
+    console.log('PASS: ' + process.platform + ' real HTTP auth, prototype-safe memory/bridge persistence, multipart 413, Socket.IO admission; stream outcome=' + authenticated);
   } finally {
     if (server.exitCode === null) {
       server.kill('SIGTERM');
