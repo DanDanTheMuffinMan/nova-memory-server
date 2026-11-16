@@ -6,23 +6,51 @@ const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const { randomInt } = require('node:crypto');
 const { once } = require('node:events');
+const http = require('node:http');
 const { io } = require('socket.io-client');
 
 const port = randomInt(34000, 48000);
+const webhookPort = randomInt(48001, 61000);
+const webhookUrl = 'http://127.0.0.1:' + webhookPort + '/ci-unova-webhook';
+const webhookKey = 'ci-loopback-unova-key-not-a-real-secret';
 const base = 'http://127.0.0.1:' + port;
 const secret = 'ci-local-only-memory-api-key-0123456789abcdef';
 const user = 'ci-runtime-smoke';
 const env = { ...process.env, PORT: String(port), NOVA_MEMORY_API_KEY: secret };
 delete env.DISPLAY;
 delete env.NOTION_TOKEN;
-delete env.UNOVA_WEBHOOK_URL;
-delete env.UNOVA_API_KEY;
+// Configure only a local loopback UNOVA receiver; never contact real integrations.
+env.UNOVA_WEBHOOK_URL = webhookUrl;
+env.UNOVA_API_KEY = webhookKey;
+env.NO_PROXY = '127.0.0.1,localhost';
+env.no_proxy = '127.0.0.1,localhost';
 const server = spawn(process.execPath, ['index.js'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
 let output = '';
 for (const stream of [server.stdout, server.stderr]) {
   stream.on('data', (data) => { output = (output + data.toString()).slice(-3000); });
 }
 const auth = { Authorization: 'Bearer ' + secret };
+// Collect real outbound HTTP requests from the composed server without external traffic.
+const deliveries = [];
+const webhookServer = http.createServer((req, res) => {
+  const chunks = [];
+  req.on('data', chunk => chunks.push(chunk));
+  req.on('end', () => {
+    try {
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      deliveries.push({
+        method: req.method, path: req.url,
+        authorization: req.headers.authorization,
+        contentType: req.headers['content-type'], body,
+      });
+      res.writeHead(202, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ accepted: true }));
+    } catch (_) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid test payload' }));
+    }
+  });
+});
 function check(value, message) { assert.ok(value, message); }
 async function request(path, options = {}, expected = 200) {
   const response = await fetch(base + path, { ...options, signal: AbortSignal.timeout(8000) });
@@ -73,6 +101,10 @@ async function waitForReady() {
 }
 async function main() {
   try {
+    await new Promise((resolve, reject) => {
+      webhookServer.once('error', reject);
+      webhookServer.listen(webhookPort, '127.0.0.1', resolve);
+    });
     await waitForReady();
     const spec = await (await request('/openapi.json')).json();
     check(spec.security?.[0]?.bearerAuth, 'OpenAPI bearer auth missing');
@@ -88,13 +120,51 @@ async function main() {
     })).json();
     assert.equal(saved.success, true);
 
+    // Unauthorized callers must never trigger configured outbound delivery.
+    await request('/bridge/entry', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user, entryType: 'memory', topic: 'denied', value: 'no' }),
+    }, 401);
+    assert.equal(deliveries.length, 0, 'unauthorized bridge request emitted a webhook');
+
     const bridge = await (await request('/bridge/entry', {
       method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: user, entryType: 'memory', topic: 'bridge', value: 'saved' }),
     })).json();
     assert.equal(bridge.success, true);
+    assert.deepEqual(bridge.unova, { enabled: true, success: true, status: 202 });
+    assert.equal(deliveries.length, 1, 'expected exactly one loopback webhook');
+    assert.equal(deliveries[0].method, 'POST');
+    assert.equal(deliveries[0].path, '/ci-unova-webhook');
+    assert.equal(deliveries[0].authorization, 'Bearer ' + webhookKey);
+    assert.match(deliveries[0].contentType, /^application\/json/);
+    assert.equal(deliveries[0].body.event, 'nova.entry.created');
+    assert.equal(deliveries[0].body.payload.userId, user);
+    assert.equal(deliveries[0].body.payload.topic, 'bridge');
+    assert.equal(deliveries[0].body.payload.value, 'saved');
+
+    // A different path on the SAME local receiver safely detects any attempt
+    // to send a configured server key to a caller-selected destination.
+    // No attacker-controlled external host is ever contacted by the test.
+    const malicious = [
+      { webhookUrl: webhookUrl + '/untrusted-path' },
+      { apiKey: 'ci-request-controlled-key' },
+    ];
+    for (const override of malicious) {
+      const attempt = await (await request('/bridge/entry', {
+        method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user, entryType: 'memory',
+          topic: 'rejected-override', value: 'stored-only', unova: override,
+        }),
+      })).json();
+      assert.equal(attempt.success, true);
+      assert.equal(attempt.unova?.success, false, 'webhook override was accepted');
+      assert.match(attempt.unova.error, /must be configured on the server/);
+      assert.equal(deliveries.length, 1, 'override caused unauthorized outbound HTTP');
+    }
     const memories = await (await request('/memory?userId=' + user, { headers: auth })).json();
-    assert.deepEqual(memories.map(x => x.topic), ['smoke', 'bridge']);
+    assert.deepEqual(memories.map(x => x.topic), ['smoke', 'bridge', 'rejected-override', 'rejected-override']);
 
     // Confirm PR #19's fix against real HTTP routes in the composed checkout.
     for (const specialId of ['__proto__', 'constructor', 'toString']) {
@@ -147,8 +217,11 @@ async function main() {
       ? ['screen-frame', 'error:Screen capture failed', 'error:Screen capture not available (no display)']
       : ['error:Screen capture not available (no display)'];
     check(expected.includes(authenticated), 'Unexpected authenticated stream outcome: ' + authenticated);
-    console.log('PASS: ' + process.platform + ' real HTTP auth, prototype-safe memory/bridge persistence, multipart 413, Socket.IO admission; stream outcome=' + authenticated);
+    console.log('PASS: ' + process.platform + ' real HTTP auth, prototype-safe persistence, configured loopback UNOVA webhook 202/bearer, no override leakage, multipart 413, Socket.IO admission; stream outcome=' + authenticated);
   } finally {
+    if (webhookServer.listening) {
+      await new Promise(resolve => webhookServer.close(resolve));
+    }
     if (server.exitCode === null) {
       server.kill('SIGTERM');
       await Promise.race([once(server, 'exit'), new Promise(resolve => setTimeout(resolve, 1500))]);
