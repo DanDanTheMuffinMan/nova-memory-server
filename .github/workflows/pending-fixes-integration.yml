@@ -183,4 +183,4 @@ jobs:
           cp "$RUNNER_TEMP/runtime-smoke.cjs" test/runtime-smoke.cjs
           node --check test/runtime-smoke.cjs
           node test/runtime-smoke.cjs
-          echo "Real HTTP/Socket.IO smoke tests passed on $RUNNER_OS in a disposable hosted runner; no personal Mac, Notion or webhook contacted." >> "$GITHUB_STEP_SUMMARY"
+          echo "Real loopback HTTP, UNOVA webhook receiver, and Socket.IO smoke passed on $RUNNER_OS; no personal Mac, external Notion, or external webhook contacted." >> "$GITHUB_STEP_SUMMARY"
