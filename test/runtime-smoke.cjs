@@ -1,7 +1,7 @@
 'use strict';
 
 // Real loopback HTTP/Socket.IO parity checks against the composed draft code.
-// This never contacts Notion, UNOVA webhooks, or a user's Mac.
+// This contacts only a local UNOVA webhook stub; never external Notion/UNOVA or personal Macs.
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const { randomInt } = require('node:crypto');
