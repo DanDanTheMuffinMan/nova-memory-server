@@ -5,6 +5,7 @@ const socketIO = require('socket.io');
 const multer = require('multer');
 const { Client: NotionClient } = require('@notionhq/client');
 const { createBridgeIntegrations } = require('./bridge-integrations');
+const { createBridgeIdempotency, BridgeIdempotencyError } = require('./bridge-idempotency');
 
 const app = express();
 const server = http.createServer(app);
@@ -55,6 +56,7 @@ if (hasDisplay) {
 const memoryStore = {};
 const journalStore = {};
 const mediaStore = {}; // Store uploaded media references
+const bridgeIdempotency = createBridgeIdempotency();
 
 const notionConfig = {
   token: process.env.NOTION_TOKEN,
@@ -906,6 +908,13 @@ const getOpenApiSpec = (serverUrl) => ({
       post: {
         operationId: 'bridgeEntry',
         summary: 'Store a memory/journal entry and optionally sync to UNOVA and Notion',
+        parameters: [{
+          name: 'Idempotency-Key',
+          in: 'header',
+          required: false,
+          description: 'Optional stable retry identifier (max 128 ASCII characters). Identical requests replay their result for up to 10 minutes per process; changed bodies return 409. Not durable across restarts.',
+          schema: { type: 'string', maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' }
+        }],
         requestBody: {
           required: true,
           content: {
@@ -1446,6 +1455,7 @@ app.get('/media/:userId/:mediaId', (req, res) => {
 // ============================================
 
 // POST /bridge/entry - Store memory/journal and sync to UNOVA/Notion
+// Clients may supply a stable Idempotency-Key to suppress network retries.
 app.post('/bridge/entry', async (req, res) => {
   try {
     const {
@@ -1463,67 +1473,77 @@ app.post('/bridge/entry', async (req, res) => {
     if (!userId || !entryType) {
       return res.status(400).json({ error: 'Missing userId or entryType' });
     }
-
-    let storedEntry = null;
-    let notionTitle = '';
-    let notionContent = '';
-
-    if (entryType === 'memory') {
-      if (!topic || !value) {
-        return res.status(400).json({ error: 'Missing topic or value for memory entry' });
-      }
-      if (!memoryStore[userId]) memoryStore[userId] = [];
-      storedEntry = { topic, value, createdAt: new Date().toISOString() };
-      memoryStore[userId].push(storedEntry);
-      notionTitle = title || topic;
-      notionContent = value;
-    } else if (entryType === 'journal') {
-      if (!title || !content) {
-        return res.status(400).json({ error: 'Missing title or content for journal entry' });
-      }
-      if (!journalStore[userId]) journalStore[userId] = [];
-      storedEntry = { title, content, createdAt: new Date().toISOString() };
-      journalStore[userId].push(storedEntry);
-      notionTitle = title;
-      notionContent = content;
-    } else {
+    if (entryType === 'memory' && (!topic || !value)) {
+      return res.status(400).json({ error: 'Missing topic or value for memory entry' });
+    }
+    if (entryType === 'journal' && (!title || !content)) {
+      return res.status(400).json({ error: 'Missing title or content for journal entry' });
+    }
+    if (entryType !== 'memory' && entryType !== 'journal') {
       return res.status(400).json({ error: 'Invalid entryType. Use "memory" or "journal".' });
     }
 
-    const [notionResult, unovaResult] = await Promise.all([
-      createNotionEntry({
-        title: notionTitle,
-        content: notionContent,
-        tags,
-        userId,
-        entryType,
-        overrides: notion || {}
-      }),
-      sendUnovaEvent({
-        payload: {
+    const result = await bridgeIdempotency.execute({
+      key: req.get('Idempotency-Key'),
+      userId,
+      entryType,
+      body: req.body || {}
+    }, async () => {
+      let storedEntry;
+      let notionTitle;
+      let notionContent;
+
+      if (entryType === 'memory') {
+        if (!memoryStore[userId]) memoryStore[userId] = [];
+        storedEntry = { topic, value, createdAt: new Date().toISOString() };
+        memoryStore[userId].push(storedEntry);
+        notionTitle = title || topic;
+        notionContent = value;
+      } else {
+        if (!journalStore[userId]) journalStore[userId] = [];
+        storedEntry = { title, content, createdAt: new Date().toISOString() };
+        journalStore[userId].push(storedEntry);
+        notionTitle = title;
+        notionContent = content;
+      }
+
+      const [notionResult, unovaResult] = await Promise.all([
+        createNotionEntry({
+          title: notionTitle,
+          content: notionContent,
+          tags,
           userId,
           entryType,
-          topic,
-          value,
-          title,
-          content,
-          tags,
-          storedAt: storedEntry.createdAt
-        },
-        overrides: unova || {}
-      })
-    ]);
+          overrides: notion || {}
+        }),
+        sendUnovaEvent({
+          payload: {
+            userId,
+            entryType,
+            topic,
+            value,
+            title,
+            content,
+            tags,
+            storedAt: storedEntry.createdAt
+          },
+          overrides: unova || {}
+        })
+      ]);
 
-    res.json({
-      success: true,
-      stored: {
-        entryType,
-        entry: storedEntry
-      },
-      notion: notionResult,
-      unova: unovaResult
+      return {
+        success: true,
+        stored: { entryType, entry: storedEntry },
+        notion: notionResult,
+        unova: unovaResult
+      };
     });
+
+    res.json(result);
   } catch (error) {
+    if (error instanceof BridgeIdempotencyError) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
