@@ -5,6 +5,7 @@ on:
       - 'bridge-idempotency.js'
       - 'index.js'
       - 'test/bridge-idempotency.test.js'
+      - 'test/bridge-idempotency-http.cjs'
       - 'test/bridge-integrations.test.js'
       - '.github/workflows/bridge-idempotency.yml'
   push:
@@ -34,3 +35,7 @@ jobs:
           node --check test/bridge-idempotency.test.js
       - name: Replay, concurrency and integration tests
         run: node --test test/bridge-idempotency.test.js test/bridge-integrations.test.js
+      - name: Install dependencies for loopback HTTP smoke
+        run: npm install --no-audit --no-fund
+      - name: Verify real HTTP keyed retries and loopback delivery
+        run: node test/bridge-idempotency-http.cjs
