@@ -1,0 +1,36 @@
+name: Bridge idempotency regression
+on:
+  pull_request:
+    paths:
+      - 'bridge-idempotency.js'
+      - 'index.js'
+      - 'test/bridge-idempotency.test.js'
+      - 'test/bridge-integrations.test.js'
+      - '.github/workflows/bridge-idempotency.yml'
+  push:
+    paths:
+      - 'bridge-idempotency.js'
+      - 'index.js'
+      - 'test/bridge-idempotency.test.js'
+      - 'test/bridge-integrations.test.js'
+      - '.github/workflows/bridge-idempotency.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check
+        run: |
+          node --check index.js
+          node --check bridge-idempotency.js
+          node --check test/bridge-idempotency.test.js
+      - name: Replay, concurrency and integration tests
+        run: node --test test/bridge-idempotency.test.js test/bridge-integrations.test.js
