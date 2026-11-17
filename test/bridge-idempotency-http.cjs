@@ -61,6 +61,9 @@ async function main() {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     assert.equal(ready, true, 'Service not ready: ' + log);
+    const spec = await (await fetch(base + '/openapi.json')).json();
+    const bridgeSpec = spec.paths['/bridge/entry'].post;
+    assert.equal(bridgeSpec.parameters.find(p => p.name === 'Idempotency-Key')?.in, 'header');
     const a = await write('ci-001');
     assert.equal(a.status, 200);
     const first = await a.json();
