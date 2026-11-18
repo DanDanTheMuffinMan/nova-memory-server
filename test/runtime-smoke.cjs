@@ -166,6 +166,46 @@ async function main() {
     const memories = await (await request('/memory?userId=' + user, { headers: auth })).json();
     assert.deepEqual(memories.map(x => x.topic), ['smoke', 'bridge', 'rejected-override', 'rejected-override']);
 
+    // PR #20 must survive the seven-branch composition, including PR #13 auth.
+    // Actual local HTTP calls and a local webhook receiver verify one stored
+    // record and outbound event per unique key. No production server contacted.
+    const retrySpec = spec.paths['/bridge/entry']?.post?.parameters || [];
+    assert.equal(retrySpec.find(param => param.name === 'Idempotency-Key')?.in, 'header',
+      'Composed OpenAPI schema lost retry header');
+    const payload = { userId: user, entryType: 'memory', topic: 'retry-one', value: 'once' };
+    const keyedWrite = (key, body) => request('/bridge/entry', {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/json', 'Idempotency-Key': key },
+      body: JSON.stringify(body)
+    });
+    const firstReply = await (await keyedWrite('ci-retry-001', payload)).json();
+    const repeatReply = await (await keyedWrite('ci-retry-001', payload)).json();
+    assert.deepEqual(repeatReply, firstReply, 'sequential retry did not replay original response');
+    assert.equal(deliveries.length, 2, 'sequential retry duplicated webhook delivery');
+
+    const changedReply = await fetch(base + '/bridge/entry', {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/json', 'Idempotency-Key': 'ci-retry-001' },
+      body: JSON.stringify({ ...payload, value: 'conflicting' }),
+      signal: AbortSignal.timeout(8000)
+    });
+    assert.equal(changedReply.status, 409, 'changed-body key reuse should be HTTP 409');
+    assert.equal(deliveries.length, 2, 'conflicting retry dispatched a webhook');
+
+    const concurrent = { ...payload, topic: 'retry-concurrent' };
+    const [concurrentA, concurrentB] = await Promise.all([
+      keyedWrite('ci-retry-002', concurrent),
+      keyedWrite('ci-retry-002', concurrent),
+    ]);
+    assert.deepEqual(await concurrentA.json(), await concurrentB.json(),
+      'concurrent matching requests must return the same response');
+    assert.equal(deliveries.length, 3, 'concurrent retries duplicated webhook');
+    const afterRetry = await (await request('/memory?userId=' + user, { headers: auth })).json();
+    assert.deepEqual(afterRetry.map(entry => entry.topic), [
+      'smoke', 'bridge', 'rejected-override', 'rejected-override', 'retry-one', 'retry-concurrent'
+    ], 'same-key requests added extra memory records');
+    console.log('PASS: authenticated sequential/concurrent Idempotency-Key retries yielded one write and webhook per unique request; changed body 409');
+
     // Confirm PR #19's fix against real HTTP routes in the composed checkout.
     for (const specialId of ['__proto__', 'constructor', 'toString']) {
       const encodedId = encodeURIComponent(specialId);
