@@ -44,7 +44,8 @@ jobs:
             "16 0c832715e9285f22f6c4c69f2910769cb7c2a925" \
             "15 41c3c5f154e2f56be079e425ebb5586d102dcac2" \
             "17 9a0dbedee86582d9bc62b1e68326225ce601d83d" \
-            "19 8afe46a2b4c485ca845e645df46e29f06b86290e"
+            "19 8afe46a2b4c485ca845e645df46e29f06b86290e" \
+            "20 68680322d321612f515a4396c8903330d905308c"
           do
             read -r pr expected <<< "$entry"
             git fetch --no-tags origin "refs/pull/$pr/head"
@@ -74,8 +75,8 @@ jobs:
               fi
             fi
           done
-          echo "All six pinned draft heads merged in the disposable checkout using guarded incoming-hunk resolution." >> "$GITHUB_STEP_SUMMARY"
-      - name: Restore validated independent imports and assert all six fixes survive
+          echo "All seven pinned draft heads merged in the disposable checkout using guarded incoming-hunk resolution." >> "$GITHUB_STEP_SUMMARY"
+      - name: Restore validated independent imports and assert all seven fixes survive
         shell: bash
         run: |
           set -euo pipefail
@@ -96,6 +97,7 @@ jobs:
               "const { createBridgeIntegrations } = require('./bridge-integrations');",
               "const { MEDIA_FILE_LIMIT_BYTES, canAcceptMedia } = require('./media-limits');",
               "const { createScreenStream } = require('./screen-stream');",
+              "const { createBridgeIdempotency, BridgeIdempotencyError } = require('./bridge-idempotency');",
           ]
           for line in imports:
               if line not in source:
@@ -141,6 +143,10 @@ jobs:
               'prototype-safe memory': 'const memoryStore = Object.create(null);',
               'prototype-safe journal': 'const journalStore = Object.create(null);',
               'screen lifecycle': 'const stream = createScreenStream({',
+              'retry guard constructed': 'const bridgeIdempotency = createBridgeIdempotency();',
+              'retry guard invoked': 'await bridgeIdempotency.execute({',
+              'retry key header': "req.get('Idempotency-Key')",
+              'retry request contract': "name: 'Idempotency-Key'",
               'screen stop': "socket.on('stop-screen-stream', () => stream.stop())",
               'OpenAPI bearer': 'security: [{ bearerAuth: [] }]',
           }
@@ -159,7 +165,7 @@ jobs:
                   raise SystemExit(f'DUPLICATED/MISSING import: {line}')
 
           p.write_text(source)
-          print('PASS: retained auth, bridge, media quota, screen lifecycle and OpenAPI guards')
+          print('PASS: retained auth, bridge, media, screen, retry and OpenAPI guards')
           PY
           git diff --check
           echo "Verified composition contracts before executing all tests." >> "$GITHUB_STEP_SUMMARY"
@@ -168,7 +174,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check index.js
-          for module in api-security.js bridge-integrations.js media-limits.js screen-stream.js; do
+          for module in api-security.js bridge-integrations.js media-limits.js screen-stream.js bridge-idempotency.js; do
             test -f "$module"
             node --check "$module"
           done
