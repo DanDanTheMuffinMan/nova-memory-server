@@ -1,0 +1,35 @@
+name: Reject ambiguous memory user IDs
+on:
+  pull_request:
+    paths:
+      - "index.js"
+      - "user-id.js"
+      - "test/user-id.test.js"
+      - "test/user-id-http-smoke.cjs"
+      - ".github/workflows/user-id-integrity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  user-id-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax and isolated regression tests
+        run: |
+          set -euo pipefail
+          node --check index.js
+          node --check user-id.js
+          node --check test/user-id-http-smoke.cjs
+          node --test test/*.test.js
+      - name: Exercise HTTP identity boundaries without external services
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+          node test/user-id-http-smoke.cjs
