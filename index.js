@@ -4,6 +4,7 @@ const http = require('http');
 const socketIO = require('socket.io');
 const multer = require('multer');
 const { Client: NotionClient } = require('@notionhq/client');
+const { isValidUserId } = require('./user-id');
 
 const app = express();
 const server = http.createServer(app);
@@ -1107,7 +1108,7 @@ const getOpenApiSpec = (serverUrl) => ({
 // GET /memory?userId=123
 app.get('/memory', (req, res) => {
   const userId = req.query.userId;
-  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+  if (!isValidUserId(userId)) return res.status(400).json({ error: 'Missing userId' });
   const entries = memoryStore[userId] || [];
   res.json(entries);
 });
@@ -1115,7 +1116,7 @@ app.get('/memory', (req, res) => {
 // POST /memory { userId, topic, value }
 app.post('/memory', async (req, res) => {
   const { userId, topic, value, syncToNotion } = req.body;
-  if (!userId || !topic || !value) return res.status(400).json({ error: 'Missing fields' });
+  if (!isValidUserId(userId) || !topic || !value) return res.status(400).json({ error: 'Missing fields' });
   if (!memoryStore[userId]) memoryStore[userId] = [];
   const createdAt = new Date().toISOString();
   memoryStore[userId].push({ topic, value, createdAt });
@@ -1139,7 +1140,7 @@ app.post('/memory', async (req, res) => {
 // GET /journal?userId=123
 app.get('/journal', (req, res) => {
   const userId = req.query.userId;
-  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+  if (!isValidUserId(userId)) return res.status(400).json({ error: 'Missing userId' });
   const entries = journalStore[userId] || [];
   res.json(entries);
 });
@@ -1147,7 +1148,7 @@ app.get('/journal', (req, res) => {
 // POST /journal { userId, title, content }
 app.post('/journal', async (req, res) => {
   const { userId, title, content, syncToNotion } = req.body;
-  if (!userId || !title || !content) return res.status(400).json({ error: 'Missing fields' });
+  if (!isValidUserId(userId) || !title || !content) return res.status(400).json({ error: 'Missing fields' });
   if (!journalStore[userId]) journalStore[userId] = [];
   const createdAt = new Date().toISOString();
   journalStore[userId].push({ title, content, createdAt });
@@ -1188,7 +1189,7 @@ app.get('/notion/status', (req, res) => {
 // POST /notion/memory - Create Notion page for memory entry
 app.post('/notion/memory', async (req, res) => {
   const { userId, topic, value, createdAt } = req.body;
-  if (!userId || !topic || !value) return res.status(400).json({ error: 'Missing fields' });
+  if (!isValidUserId(userId) || !topic || !value) return res.status(400).json({ error: 'Missing fields' });
   if (!canSyncToNotion('memory')) {
     return res.status(503).json({ error: 'Notion not configured' });
   }
@@ -1206,7 +1207,7 @@ app.post('/notion/memory', async (req, res) => {
 // POST /notion/journal - Create Notion page for journal entry
 app.post('/notion/journal', async (req, res) => {
   const { userId, title, content, createdAt } = req.body;
-  if (!userId || !title || !content) return res.status(400).json({ error: 'Missing fields' });
+  if (!isValidUserId(userId) || !title || !content) return res.status(400).json({ error: 'Missing fields' });
   if (!canSyncToNotion('journal')) {
     return res.status(503).json({ error: 'Notion not configured' });
   }
@@ -1469,7 +1470,7 @@ app.get('/capture/screen/info', async (req, res) => {
 app.post('/upload/image', upload.single('image'), (req, res) => {
   try {
     const { userId, description, source } = req.body;
-    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    if (!isValidUserId(userId)) return res.status(400).json({ error: 'Missing userId' });
     if (!req.file) return res.status(400).json({ error: 'Missing image file' });
     
     if (!mediaStore[userId]) mediaStore[userId] = [];
@@ -1500,7 +1501,7 @@ app.post('/upload/image', upload.single('image'), (req, res) => {
 app.post('/upload/audio', upload.single('audio'), (req, res) => {
   try {
     const { userId, description, duration } = req.body;
-    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    if (!isValidUserId(userId)) return res.status(400).json({ error: 'Missing userId' });
     if (!req.file) return res.status(400).json({ error: 'Missing audio file' });
     
     if (!mediaStore[userId]) mediaStore[userId] = [];
@@ -1531,7 +1532,7 @@ app.post('/upload/audio', upload.single('audio'), (req, res) => {
 // GET /media?userId=123 - Retrieve media for user
 app.get('/media', (req, res) => {
   const userId = req.query.userId;
-  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+  if (!isValidUserId(userId)) return res.status(400).json({ error: 'Missing userId' });
   
   const entries = mediaStore[userId] || [];
   
@@ -1592,7 +1593,7 @@ app.post('/bridge/entry', async (req, res) => {
       unova
     } = req.body || {};
 
-    if (!userId || !entryType) {
+    if (!isValidUserId(userId) || !entryType) {
       return res.status(400).json({ error: 'Missing userId or entryType' });
     }
 
