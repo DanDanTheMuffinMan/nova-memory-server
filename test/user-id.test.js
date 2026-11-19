@@ -14,7 +14,7 @@ test('arrays, objects, numbers, null and blank IDs are rejected', () => {
     ['alpha', 'beta'], { some: 'value' }, Object.create(null), 7, 0,
     true, null, undefined, '', '   ', '\n\t'
   ]) {
-    assert.equal(isValidUserId(userId), false, String(userId));
+    assert.equal(isValidUserId(userId), false, Object.prototype.toString.call(userId));
   }
 });
 
