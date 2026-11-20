@@ -206,6 +206,42 @@ async function main() {
     ], 'same-key requests added extra memory records');
     console.log('PASS: authenticated sequential/concurrent Idempotency-Key retries yielded one write and webhook per unique request; changed body 409');
 
+    // PR #21 guards every caller-controlled identity before property-key
+    // coercion or side effects, even with PR #20's retry wrapper composed.
+    const identityAnchor = 'alpha,beta';
+    const initialIdentity = await (await request('/memory', {
+      method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: identityAnchor, topic: 'identity-anchor', value: 'preserved' }),
+    })).json();
+    assert.equal(initialIdentity.success, true);
+    const deliveriesBeforeInvalidIds = deliveries.length;
+    for (const invalidId of [['alpha', 'beta'], { anything: 'else' }, 19, '  ', null]) {
+      for (const [route, body] of [
+        ['/memory', { userId: invalidId, topic: 'alias', value: 'bad' }],
+        ['/journal', { userId: invalidId, title: 'alias', content: 'bad' }],
+        ['/bridge/entry', { userId: invalidId, entryType: 'memory', topic: 'alias', value: 'bad' }],
+        ['/notion/memory', { userId: invalidId, topic: 'alias', value: 'bad' }],
+        ['/notion/journal', { userId: invalidId, title: 'alias', content: 'bad' }],
+      ]) {
+        await request(route, {
+          method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }, 400);
+      }
+    }
+    for (const route of ['/memory', '/journal', '/media']) {
+      await request(route + '?userId=alpha&userId=beta', { headers: auth }, 400);
+    }
+    const ambiguousUpload = new FormData();
+    ambiguousUpload.append('userId', 'alpha');
+    ambiguousUpload.append('userId', 'beta');
+    ambiguousUpload.append('image', new Blob([Buffer.from('unsafe')], { type: 'image/png' }), 'unsafe.png');
+    await request('/upload/image', { method: 'POST', headers: auth, body: ambiguousUpload }, 400);
+    const afterInvalidIds = await (await request('/memory?userId=alpha%2Cbeta', { headers: auth })).json();
+    assert.deepEqual(afterInvalidIds.map(entry => entry.topic), ['identity-anchor'], 'invalid IDs mutated a legitimate user identity');
+    assert.equal(deliveries.length, deliveriesBeforeInvalidIds, 'invalid user ID dispatched a webhook');
+    console.log('PASS: composed HTTP, query, and multipart user-ID validation rejected aliases without writes or sends');
+
     // Confirm PR #19's fix against real HTTP routes in the composed checkout.
     for (const specialId of ['__proto__', 'constructor', 'toString']) {
       const encodedId = encodeURIComponent(specialId);
