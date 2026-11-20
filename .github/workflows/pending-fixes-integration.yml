@@ -45,6 +45,7 @@ jobs:
             "15 41c3c5f154e2f56be079e425ebb5586d102dcac2" \
             "17 9a0dbedee86582d9bc62b1e68326225ce601d83d" \
             "19 8afe46a2b4c485ca845e645df46e29f06b86290e" \
+            "21 656446de0dff4b3023329414c6310d860e9fd702" \
             "20 68680322d321612f515a4396c8903330d905308c"
           do
             read -r pr expected <<< "$entry"
@@ -75,8 +76,8 @@ jobs:
               fi
             fi
           done
-          echo "All seven pinned draft heads merged in the disposable checkout using guarded incoming-hunk resolution." >> "$GITHUB_STEP_SUMMARY"
-      - name: Restore validated independent imports and assert all seven fixes survive
+          echo "All eight pinned draft heads merged in the disposable checkout using guarded incoming-hunk resolution." >> "$GITHUB_STEP_SUMMARY"
+      - name: Restore validated independent imports and assert all eight fixes survive
         shell: bash
         run: |
           set -euo pipefail
@@ -98,6 +99,7 @@ jobs:
               "const { MEDIA_FILE_LIMIT_BYTES, canAcceptMedia } = require('./media-limits');",
               "const { createScreenStream } = require('./screen-stream');",
               "const { createBridgeIdempotency, BridgeIdempotencyError } = require('./bridge-idempotency');",
+              "const { isValidUserId } = require('./user-id');",
           ]
           for line in imports:
               if line not in source:
@@ -128,6 +130,19 @@ jobs:
                   1,
               )
 
+          # #21 is based on #19, whereas #20 stacks on #16. The final
+          # #20 bridge hunk may restore its old truthiness-only userId check.
+          # Reinstate precisely #21's reviewed validation before side effects.
+          legacy_bridge = "if (!userId || !entryType) {"
+          if legacy_bridge in source:
+              if source.count(legacy_bridge) != 1:
+                  raise SystemExit('Ambiguous bridge validation hunk: manual review')
+              source = source.replace(
+                  legacy_bridge,
+                  "if (!isValidUserId(userId) || !entryType) {",
+                  1,
+              )
+
           # No feature silently disappears merely because a three-way hunk
           # favored the incoming PR. An unfamiliar edit fails CI closed.
           required = {
@@ -147,6 +162,8 @@ jobs:
               'retry guard invoked': 'await bridgeIdempotency.execute({',
               'retry key header': "req.get('Idempotency-Key')",
               'retry request contract': "name: 'Idempotency-Key'",
+              'typed user-ID validator': "const { isValidUserId } = require('./user-id');",
+              'bridge validates user ID before retry reservation': "if (!isValidUserId(userId) || !entryType) {",
               'screen stop': "socket.on('stop-screen-stream', () => stream.stop())",
               'OpenAPI bearer': 'security: [{ bearerAuth: [] }]',
           }
@@ -163,6 +180,12 @@ jobs:
           for line in imports:
               if source.count(line) != 1:
                   raise SystemExit(f'DUPLICATED/MISSING import: {line}')
+          # 10 touched route guards in #21 (memory/journal 4, Notion 2,
+          # uploads 2, media GET 1, bridge 1) must survive eight-way merge.
+          if source.count("if (!isValidUserId(userId)") < 10:
+              raise SystemExit('LOST USER ID GUARD: one or more routes reverted')
+          if "if (!userId || !entryType)" in source:
+              raise SystemExit('STILL UNSAFE: bridge user ID accepts nonstrings')
 
           p.write_text(source)
           print('PASS: retained auth, bridge, media, screen, retry and OpenAPI guards')
@@ -174,7 +197,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check index.js
-          for module in api-security.js bridge-integrations.js media-limits.js screen-stream.js bridge-idempotency.js; do
+          for module in api-security.js bridge-integrations.js media-limits.js screen-stream.js bridge-idempotency.js user-id.js; do
             test -f "$module"
             node --check "$module"
           done
