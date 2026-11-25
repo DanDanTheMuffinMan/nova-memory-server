@@ -34,6 +34,7 @@ jobs:
           # Preserve this PR-only smoke runner before detaching to main.
           cp test/runtime-smoke.cjs "$RUNNER_TEMP/runtime-smoke.cjs"
           git fetch --no-tags origin main
+          test "$(git rev-parse FETCH_HEAD)" = "fd59785bbfc070b2f287689378ece54b78123fe5" || { echo "::error::Main baseline changed; review candidate inputs"; exit 1; }
           git switch --detach FETCH_HEAD
           ledger="systems/699f91d299d08191b461d5c6b9280c1b/ledger.md"
           echo "## Pending memory-server draft compatibility" >> "$GITHUB_STEP_SUMMARY"
@@ -213,3 +214,40 @@ jobs:
           node --check test/runtime-smoke.cjs
           node test/runtime-smoke.cjs
           echo "Real loopback HTTP, UNOVA webhook receiver, and Socket.IO smoke passed on $RUNNER_OS; no personal Mac, external Notion, or external webhook contacted." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Materialize and round-trip the tested candidate for review
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=fd59785bbfc070b2f287689378ece54b78123fe5
+          ledger="systems/699f91d299d08191b461d5c6b9280c1b/ledger.md"
+          git merge-base --is-ancestor "$base" HEAD
+          git add -- test/runtime-smoke.cjs
+          bundle="$RUNNER_TEMP/unova-review-candidate"
+          mkdir -p "$bundle"
+          git diff --no-ext-diff --no-textconv --no-renames --binary --full-index "$base" -- . ":(exclude)$ledger" > "$bundle/candidate.patch"
+          test -s "$bundle/candidate.patch"
+          scratch="$(mktemp -d "$RUNNER_TEMP/unova-review.XXXXXX")"
+          git worktree add --detach "$scratch" "$base"
+          git -C "$scratch" apply --index --check --whitespace=nowarn "$bundle/candidate.patch"
+          git -C "$scratch" apply --index --whitespace=nowarn "$bundle/candidate.patch"
+          git -C "$scratch" diff --cached --no-ext-diff --no-textconv --no-renames --binary --full-index "$base" -- . > "$RUNNER_TEMP/roundtrip.patch"
+          cmp "$bundle/candidate.patch" "$RUNNER_TEMP/roundtrip.patch"
+          git -C "$scratch" diff --cached --stat > "$bundle/change-summary.txt"
+          {
+            printf 'baseline=%s\n' "$base"
+            printf 'workflow_checkout=%s\n' "$GITHUB_SHA"
+            printf 'run_id=%s\nrun_attempt=%s\nrunner_os=%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$RUNNER_OS"
+            printf 'component_prs=13,14,16,15,17,19,21,20\n'
+            printf 'scope=review only; no production deployment or PR merge\n'
+          } > "$bundle/provenance.txt"
+          python3 -c 'import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); print(hashlib.sha256(p.read_bytes()).hexdigest()+"  candidate.patch")' "$bundle/candidate.patch" > "$bundle/SHA256SUMS"
+          echo "Review candidate round-trip passed on $RUNNER_OS; SHA256: $(cat "$bundle/SHA256SUMS")" >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain the tested review candidate
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unova-tested-review-candidate
+          path: ${{ runner.temp }}/unova-review-candidate/
+          if-no-files-found: error
+          retention-days: 14
