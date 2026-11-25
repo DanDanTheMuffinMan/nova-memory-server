@@ -159,7 +159,7 @@ async function main() {
     // to send a configured server key to a caller-selected destination.
     // No attacker-controlled external host is ever contacted by the test.
     const malicious = [
-      { webhookUrl: webhookUrl + '/untrusted-path' },
+      { webhookUrl: env.UNOVA_WEBHOOK_URL + '/untrusted-path' },
       { apiKey: 'ci-request-controlled-key' },
     ];
     for (const override of malicious) {
