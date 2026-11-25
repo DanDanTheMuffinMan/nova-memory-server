@@ -13,7 +13,7 @@ function bearerToken(header) {
   return match ? match[1] : null;
 }
 
-function createApiSecurity(secret = process.env.NOVA_MEMORY_API_KEY) {
+function createApiSecurity(secret = process.env.NOVA_MEMORY_API_KEY, authOnly = process.env.NOVA_STAGING_AUTH_ONLY === '1') {
   const expected = typeof secret === 'string' ? Buffer.from(secret, 'utf8') : null;
   const configured = Boolean(expected && expected.length >= 32);
 
@@ -36,6 +36,10 @@ function createApiSecurity(secret = process.env.NOVA_MEMORY_API_KEY) {
         .set('WWW-Authenticate', 'Bearer realm="nova-memory-server"')
         .json({ error: 'Unauthorized' });
     }
+    // An authentication-only staging key must not grant access to data, control or delivery.
+    if (authOnly && (req.method !== 'GET' || req.path !== '/notion/status')) {
+      return res.status(403).json({ error: 'Authentication-only staging' });
+    }
     return next();
   }
 
@@ -46,7 +50,9 @@ function createApiSecurity(secret = process.env.NOVA_MEMORY_API_KEY) {
     const token = typeof handshake.auth?.token === 'string'
       ? handshake.auth.token
       : bearerToken(handshake.headers?.authorization);
-    return authorized(token) ? next() : next(new Error('Unauthorized'));
+    if (!authorized(token)) return next(new Error('Unauthorized'));
+    if (authOnly) return next(new Error('Authentication-only staging'));
+    return next();
   }
 
   return { http, socket, configured };

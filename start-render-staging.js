@@ -40,6 +40,7 @@ function stagingEnvironment(env) {
     NODE_ENV: 'production',
     PORT: env.PORT,
     NOVA_MEMORY_HOST: '0.0.0.0',
+    NOVA_STAGING_AUTH_ONLY: '1',
     NOVA_MEMORY_PUBLIC_ORIGIN: origin.origin,
     NOVA_MEMORY_API_KEY: env.NOVA_STAGING_API_KEY,
     NOVA_STAGING_BUILD_SHA: env.RENDER_GIT_COMMIT,
@@ -62,7 +63,7 @@ function selfTest() {
   let count = 0;
   const child = stagingEnvironment(env);
   assert.deepEqual(child, { PATH: '/usr/bin:/bin', NODE_ENV: 'production', PORT: '10000',
-    NOVA_MEMORY_HOST: '0.0.0.0', NOVA_MEMORY_PUBLIC_ORIGIN: origin,
+    NOVA_MEMORY_HOST: '0.0.0.0', NOVA_STAGING_AUTH_ONLY: '1', NOVA_MEMORY_PUBLIC_ORIGIN: origin,
     NOVA_MEMORY_API_KEY: env.NOVA_STAGING_API_KEY, NOVA_STAGING_BUILD_SHA: sha, RENDER_GIT_COMMIT: sha });
   count++;
   const rejected = [
