@@ -38,3 +38,4 @@ jobs:
           node test/bridge-idempotency-http.cjs
           node test/user-id-http-smoke.cjs
           node test/runtime-smoke.cjs
+          node test/staging-https-smoke.cjs
