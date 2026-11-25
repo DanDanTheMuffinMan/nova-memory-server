@@ -2,6 +2,21 @@
 
 Express-based backend for storing and retrieving user memory, journal entries, and providing computer peripheral control and media capture capabilities for Nova (custom GPT) and AI agents.
 
+## Security requirement before exposing this service
+
+This API can read and write memory, capture the screen, and operate the keyboard/mouse. **Do not expose port 3000 through a public tunnel without API authentication.**
+
+Before `npm start`, set a dedicated, random `NOVA_MEMORY_API_KEY` of **at least 32 UTF-8 bytes**, using an environment or secret manager (do not commit the secret). For example, generate a value locally with `openssl rand -hex 32` and store it privately. This is **not** the outgoing `UNOVA_API_KEY` used for webhooks.
+
+- All protected HTTP operations require `Authorization: Bearer <NOVA_MEMORY_API_KEY>`.
+- In ChatGPT Actions, configure **API Key → Bearer** authentication, supplying the same secret before testing the imported schema.
+- Socket.IO screen streaming requires `auth: { token: '<NOVA_MEMORY_API_KEY>' }` at connection; an `Authorization` Bearer header also works. Query-string tokens are deliberately rejected.
+- With no valid server-side key, protected REST endpoints return **503** and Socket.IO connections are denied. `GET /` and `GET /openapi.json` remain readable so the schema can be imported.
+- Use HTTPS for tunnels and rotate the secret if compromised. A successful connection or API response does not prove the key is safe from exposure in client logs.
+- Run `npm test` to exercise the REST and Socket.IO authorization gates before deployment.
+
+**Rollout condition:** Configure the server secret and each existing HTTP/Socket.IO client first. Otherwise, adopting this security patch will intentionally disable those operations until configured. This draft does not deploy or rotate credentials.
+
 ## 🚀 Quick Start with Custom GPT
 
 Want to give your ChatGPT the ability to control your computer, capture screenshots, and remember things? 

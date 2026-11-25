@@ -2,8 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const socketIO = require('socket.io');
+const { createScreenStream } = require('./screen-stream');
 const multer = require('multer');
+const { MEDIA_FILE_LIMIT_BYTES, canAcceptMedia } = require('./media-limits');
 const { Client: NotionClient } = require('@notionhq/client');
+const { isValidUserId } = require('./user-id');
+const { createApiSecurity } = require('./api-security');
+const { createBridgeIntegrations } = require('./bridge-integrations');
+const { createBridgeIdempotency, BridgeIdempotencyError } = require('./bridge-idempotency');
 
 const app = express();
 const server = http.createServer(app);
@@ -17,10 +23,33 @@ const port = process.env.PORT || 3000;
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+const upload = multer({ storage: storage, limits: { fileSize: MEDIA_FILE_LIMIT_BYTES } });
+
+// Multer's limit errors must not fall through to Express's default 500/HTML handler.
+const boundedUpload = (field) => (req, res, next) => {
+  upload.single(field)(req, res, (error) => {
+    if (!error) return next();
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'Media file exceeds 8 MiB limit' });
+    }
+    if (error instanceof multer.MulterError) {
+      return res.status(400).json({ error: 'Invalid media upload' });
+    }
+    return next(error);
+  });
+};
 
 app.use(cors());
 app.use(express.json());
+
+// Require a dedicated secret for every memory, capture, and control operation.
+// Keep only GET / and GET /openapi.json unauthenticated.
+const apiSecurity = createApiSecurity();
+app.use(apiSecurity.http);
+io.use(apiSecurity.socket);
+if (!apiSecurity.configured) {
+  console.warn('NOVA_MEMORY_API_KEY missing or too short; protected APIs and screen streams are disabled');
+}
 
 // Check if display is available and load peripheral control libraries conditionally
 let peripheralControlAvailable = false;
@@ -51,9 +80,12 @@ if (hasDisplay) {
 }
 
 // In-memory data store
-const memoryStore = {};
-const journalStore = {};
-const mediaStore = {}; // Store uploaded media references
+// Use null-prototype maps: userId is caller-controlled and may equal '__proto__',
+// 'constructor', or other inherited Object property names.
+const memoryStore = Object.create(null);
+const journalStore = Object.create(null);
+const mediaStore = Object.create(null); // Keep user IDs isolated from Object.prototype
+const bridgeIdempotency = createBridgeIdempotency();
 
 const notionConfig = {
   token: process.env.NOTION_TOKEN,
@@ -187,142 +219,13 @@ const errorResponse = (description) => ({
   }
 });
 
-const resolveNotionConfig = (overrides = {}) => ({
-  token: overrides.token || process.env.NOTION_TOKEN,
-  databaseId: overrides.databaseId || process.env.NOTION_DATABASE_ID,
-  titleProperty: overrides.titleProperty || process.env.NOTION_TITLE_PROPERTY || 'Name',
-  tagsProperty: overrides.tagsProperty || process.env.NOTION_TAGS_PROPERTY,
-  userProperty: overrides.userProperty || process.env.NOTION_USER_PROPERTY,
-  entryTypeProperty: overrides.entryTypeProperty || process.env.NOTION_ENTRY_TYPE_PROPERTY,
-  version: overrides.version || process.env.NOTION_VERSION || DEFAULT_NOTION_VERSION
-});
-
-const resolveUnovaConfig = (overrides = {}) => ({
-  webhookUrl: overrides.webhookUrl || process.env.UNOVA_WEBHOOK_URL,
-  apiKey: overrides.apiKey || process.env.UNOVA_API_KEY,
-  eventName: overrides.eventName || process.env.UNOVA_EVENT_NAME || 'nova.entry.created'
-});
-
-const buildNotionProperties = ({ title, tags, userId, entryType, config }) => {
-  const properties = {
-    [config.titleProperty]: {
-      title: [{ text: { content: title } }]
-    }
-  };
-
-  if (Array.isArray(tags) && tags.length && config.tagsProperty) {
-    properties[config.tagsProperty] = {
-      multi_select: tags.map((tag) => ({ name: tag }))
-    };
-  }
-
-  if (userId && config.userProperty) {
-    properties[config.userProperty] = {
-      rich_text: [{ text: { content: userId } }]
-    };
-  }
-
-  if (entryType && config.entryTypeProperty) {
-    properties[config.entryTypeProperty] = {
-      select: { name: entryType }
-    };
-  }
-
-  return properties;
-};
-
-const buildNotionChildren = ({ content }) => {
-  if (!content) return [];
-  return [
-    {
-      object: 'block',
-      type: 'paragraph',
-      paragraph: {
-        rich_text: [{ type: 'text', text: { content } }]
-      }
-    }
-  ];
-};
-
-const createNotionEntry = async ({ title, content, tags, userId, entryType, overrides }) => {
-  const config = resolveNotionConfig(overrides);
-  if (!config.token || !config.databaseId) {
-    return { enabled: false };
-  }
-
-  const properties = buildNotionProperties({ title, tags, userId, entryType, config });
-  const children = buildNotionChildren({ content });
-
-  try {
-    const response = await axios.post(
-      NOTION_API_URL,
-      {
-        parent: { database_id: config.databaseId },
-        properties,
-        children
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${config.token}`,
-          'Notion-Version': config.version,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    return {
-      enabled: true,
-      success: true,
-      pageId: response.data?.id,
-      url: response.data?.url
-    };
-  } catch (error) {
-    return {
-      enabled: true,
-      success: false,
-      error: error.response?.data || error.message
-    };
-  }
-};
-
-const sendUnovaEvent = async ({ payload, overrides }) => {
-  const config = resolveUnovaConfig(overrides);
-  if (!config.webhookUrl) {
-    return { enabled: false };
-  }
-
-  try {
-    const response = await axios.post(
-      config.webhookUrl,
-      {
-        event: config.eventName,
-        payload
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {})
-        }
-      }
-    );
-
-    return {
-      enabled: true,
-      success: true,
-      status: response.status
-    };
-  } catch (error) {
-    return {
-      enabled: true,
-      success: false,
-      error: error.response?.data || error.message
-    };
-  }
-};
+const { createNotionEntry, sendUnovaEvent } = createBridgeIntegrations();
 
 // Lightweight OpenAPI schema for Custom GPT / action import
 const getOpenApiSpec = (serverUrl) => ({
   openapi: '3.0.0',
+  security: [{ bearerAuth: [] }],
+  components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },
   info: {
     title: 'Nova Memory Server',
     version: '1.0.0',
@@ -1036,6 +939,13 @@ const getOpenApiSpec = (serverUrl) => ({
       post: {
         operationId: 'bridgeEntry',
         summary: 'Store a memory/journal entry and optionally sync to UNOVA and Notion',
+        parameters: [{
+          name: 'Idempotency-Key',
+          in: 'header',
+          required: false,
+          description: 'Optional stable retry identifier (max 128 ASCII characters). Identical requests replay their result for up to 10 minutes per process; changed bodies return 409. Not durable across restarts.',
+          schema: { type: 'string', maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' }
+        }],
         requestBody: {
           required: true,
           content: {
@@ -1105,7 +1015,7 @@ const getOpenApiSpec = (serverUrl) => ({
 // GET /memory?userId=123
 app.get('/memory', (req, res) => {
   const userId = req.query.userId;
-  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+  if (!isValidUserId(userId)) return res.status(400).json({ error: 'Missing userId' });
   const entries = memoryStore[userId] || [];
   res.json(entries);
 });
@@ -1113,7 +1023,7 @@ app.get('/memory', (req, res) => {
 // POST /memory { userId, topic, value }
 app.post('/memory', async (req, res) => {
   const { userId, topic, value, syncToNotion } = req.body;
-  if (!userId || !topic || !value) return res.status(400).json({ error: 'Missing fields' });
+  if (!isValidUserId(userId) || !topic || !value) return res.status(400).json({ error: 'Missing fields' });
   if (!memoryStore[userId]) memoryStore[userId] = [];
   const createdAt = new Date().toISOString();
   memoryStore[userId].push({ topic, value, createdAt });
@@ -1137,7 +1047,7 @@ app.post('/memory', async (req, res) => {
 // GET /journal?userId=123
 app.get('/journal', (req, res) => {
   const userId = req.query.userId;
-  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+  if (!isValidUserId(userId)) return res.status(400).json({ error: 'Missing userId' });
   const entries = journalStore[userId] || [];
   res.json(entries);
 });
@@ -1145,7 +1055,7 @@ app.get('/journal', (req, res) => {
 // POST /journal { userId, title, content }
 app.post('/journal', async (req, res) => {
   const { userId, title, content, syncToNotion } = req.body;
-  if (!userId || !title || !content) return res.status(400).json({ error: 'Missing fields' });
+  if (!isValidUserId(userId) || !title || !content) return res.status(400).json({ error: 'Missing fields' });
   if (!journalStore[userId]) journalStore[userId] = [];
   const createdAt = new Date().toISOString();
   journalStore[userId].push({ title, content, createdAt });
@@ -1186,7 +1096,7 @@ app.get('/notion/status', (req, res) => {
 // POST /notion/memory - Create Notion page for memory entry
 app.post('/notion/memory', async (req, res) => {
   const { userId, topic, value, createdAt } = req.body;
-  if (!userId || !topic || !value) return res.status(400).json({ error: 'Missing fields' });
+  if (!isValidUserId(userId) || !topic || !value) return res.status(400).json({ error: 'Missing fields' });
   if (!canSyncToNotion('memory')) {
     return res.status(503).json({ error: 'Notion not configured' });
   }
@@ -1204,7 +1114,7 @@ app.post('/notion/memory', async (req, res) => {
 // POST /notion/journal - Create Notion page for journal entry
 app.post('/notion/journal', async (req, res) => {
   const { userId, title, content, createdAt } = req.body;
-  if (!userId || !title || !content) return res.status(400).json({ error: 'Missing fields' });
+  if (!isValidUserId(userId) || !title || !content) return res.status(400).json({ error: 'Missing fields' });
   if (!canSyncToNotion('journal')) {
     return res.status(503).json({ error: 'Notion not configured' });
   }
@@ -1464,11 +1374,13 @@ app.get('/capture/screen/info', async (req, res) => {
 // ============================================
 
 // POST /upload/image - Upload camera or screen image
-app.post('/upload/image', upload.single('image'), (req, res) => {
+app.post('/upload/image', boundedUpload('image'), (req, res) => {
   try {
     const { userId, description, source } = req.body;
-    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    if (!isValidUserId(userId)) return res.status(400).json({ error: 'Missing userId' });
     if (!req.file) return res.status(400).json({ error: 'Missing image file' });
+    const capacity = canAcceptMedia(mediaStore, userId, req.file.size);
+    if (!capacity.ok) return res.status(capacity.status).json({ error: capacity.error });
     
     if (!mediaStore[userId]) mediaStore[userId] = [];
     
@@ -1495,11 +1407,13 @@ app.post('/upload/image', upload.single('image'), (req, res) => {
 });
 
 // POST /upload/audio - Upload microphone audio
-app.post('/upload/audio', upload.single('audio'), (req, res) => {
+app.post('/upload/audio', boundedUpload('audio'), (req, res) => {
   try {
     const { userId, description, duration } = req.body;
-    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    if (!isValidUserId(userId)) return res.status(400).json({ error: 'Missing userId' });
     if (!req.file) return res.status(400).json({ error: 'Missing audio file' });
+    const capacity = canAcceptMedia(mediaStore, userId, req.file.size);
+    if (!capacity.ok) return res.status(capacity.status).json({ error: capacity.error });
     
     if (!mediaStore[userId]) mediaStore[userId] = [];
     
@@ -1529,7 +1443,7 @@ app.post('/upload/audio', upload.single('audio'), (req, res) => {
 // GET /media?userId=123 - Retrieve media for user
 app.get('/media', (req, res) => {
   const userId = req.query.userId;
-  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+  if (!isValidUserId(userId)) return res.status(400).json({ error: 'Missing userId' });
   
   const entries = mediaStore[userId] || [];
   
@@ -1576,6 +1490,7 @@ app.get('/media/:userId/:mediaId', (req, res) => {
 // ============================================
 
 // POST /bridge/entry - Store memory/journal and sync to UNOVA/Notion
+// Clients may supply a stable Idempotency-Key to suppress network retries.
 app.post('/bridge/entry', async (req, res) => {
   try {
     const {
@@ -1590,70 +1505,80 @@ app.post('/bridge/entry', async (req, res) => {
       unova
     } = req.body || {};
 
-    if (!userId || !entryType) {
+    if (!isValidUserId(userId) || !entryType) {
       return res.status(400).json({ error: 'Missing userId or entryType' });
     }
-
-    let storedEntry = null;
-    let notionTitle = '';
-    let notionContent = '';
-
-    if (entryType === 'memory') {
-      if (!topic || !value) {
-        return res.status(400).json({ error: 'Missing topic or value for memory entry' });
-      }
-      if (!memoryStore[userId]) memoryStore[userId] = [];
-      storedEntry = { topic, value, createdAt: new Date().toISOString() };
-      memoryStore[userId].push(storedEntry);
-      notionTitle = title || topic;
-      notionContent = value;
-    } else if (entryType === 'journal') {
-      if (!title || !content) {
-        return res.status(400).json({ error: 'Missing title or content for journal entry' });
-      }
-      if (!journalStore[userId]) journalStore[userId] = [];
-      storedEntry = { title, content, createdAt: new Date().toISOString() };
-      journalStore[userId].push(storedEntry);
-      notionTitle = title;
-      notionContent = content;
-    } else {
+    if (entryType === 'memory' && (!topic || !value)) {
+      return res.status(400).json({ error: 'Missing topic or value for memory entry' });
+    }
+    if (entryType === 'journal' && (!title || !content)) {
+      return res.status(400).json({ error: 'Missing title or content for journal entry' });
+    }
+    if (entryType !== 'memory' && entryType !== 'journal') {
       return res.status(400).json({ error: 'Invalid entryType. Use "memory" or "journal".' });
     }
 
-    const [notionResult, unovaResult] = await Promise.all([
-      createNotionEntry({
-        title: notionTitle,
-        content: notionContent,
-        tags,
-        userId,
-        entryType,
-        overrides: notion || {}
-      }),
-      sendUnovaEvent({
-        payload: {
+    const result = await bridgeIdempotency.execute({
+      key: req.get('Idempotency-Key'),
+      userId,
+      entryType,
+      body: req.body || {}
+    }, async () => {
+      let storedEntry;
+      let notionTitle;
+      let notionContent;
+
+      if (entryType === 'memory') {
+        if (!memoryStore[userId]) memoryStore[userId] = [];
+        storedEntry = { topic, value, createdAt: new Date().toISOString() };
+        memoryStore[userId].push(storedEntry);
+        notionTitle = title || topic;
+        notionContent = value;
+      } else {
+        if (!journalStore[userId]) journalStore[userId] = [];
+        storedEntry = { title, content, createdAt: new Date().toISOString() };
+        journalStore[userId].push(storedEntry);
+        notionTitle = title;
+        notionContent = content;
+      }
+
+      const [notionResult, unovaResult] = await Promise.all([
+        createNotionEntry({
+          title: notionTitle,
+          content: notionContent,
+          tags,
           userId,
           entryType,
-          topic,
-          value,
-          title,
-          content,
-          tags,
-          storedAt: storedEntry.createdAt
-        },
-        overrides: unova || {}
-      })
-    ]);
+          overrides: notion || {}
+        }),
+        sendUnovaEvent({
+          payload: {
+            userId,
+            entryType,
+            topic,
+            value,
+            title,
+            content,
+            tags,
+            storedAt: storedEntry.createdAt
+          },
+          overrides: unova || {}
+        })
+      ]);
 
-    res.json({
-      success: true,
-      stored: {
-        entryType,
-        entry: storedEntry
-      },
-      notion: notionResult,
-      unova: unovaResult
+      return {
+        success: true,
+        stored: { entryType, entry: storedEntry },
+        notion: notionResult,
+        unova: unovaResult
+      };
     });
+
+    res.json(result);
   } catch (error) {
+    if (error instanceof BridgeIdempotencyError) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -1664,49 +1589,24 @@ app.post('/bridge/entry', async (req, res) => {
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
-  
-  let streamingInterval = null;
-  
-  // Start screen streaming
-  socket.on('start-screen-stream', async (data) => {
+
+  const stream = createScreenStream({
+    capture: ({ format }) => screenshot({ format }),
+    emit: (event, payload) => socket.emit(event, payload)
+  });
+
+  socket.on('start-screen-stream', (data) => {
     if (!peripheralControlAvailable) {
       socket.emit('stream-error', { error: 'Screen capture not available (no display)' });
       return;
     }
-    
-    const { fps = 1 } = data;
-    const interval = Math.floor(1000 / fps);
-    
-    console.log(`Starting screen stream for ${socket.id} at ${fps} fps`);
-    
-    streamingInterval = setInterval(async () => {
-      try {
-        const img = await screenshot({ format: 'jpg' });
-        socket.emit('screen-frame', {
-          image: img.toString('base64'),
-          timestamp: new Date().toISOString()
-        });
-      } catch (error) {
-        console.error('Screen capture error:', error);
-        socket.emit('stream-error', { error: error.message });
-      }
-    }, interval);
+    stream.start(data);
   });
-  
-  // Stop screen streaming
-  socket.on('stop-screen-stream', () => {
-    if (streamingInterval) {
-      clearInterval(streamingInterval);
-      streamingInterval = null;
-      console.log(`Stopped screen stream for ${socket.id}`);
-    }
-  });
-  
-  // Handle disconnection
+
+  socket.on('stop-screen-stream', () => stream.stop());
+
   socket.on('disconnect', () => {
-    if (streamingInterval) {
-      clearInterval(streamingInterval);
-    }
+    stream.stop();
     console.log('Client disconnected:', socket.id);
   });
 });

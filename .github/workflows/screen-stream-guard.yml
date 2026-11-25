@@ -1,0 +1,32 @@
+name: Screen streaming safety regression
+
+on:
+  push:
+    branches:
+      - "systems/699f91d299d08191b461d5c6b9280c1b/stream-lifecycle-2026-11-05"
+  pull_request:
+    paths:
+      - "index.js"
+      - "screen-stream.js"
+      - "test/screen-stream.test.js"
+      - ".github/workflows/screen-stream-guard.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stream-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax checks
+        run: |
+          node --check index.js
+          node --check screen-stream.js
+          node --check test/screen-stream.test.js
+      - name: Stream lifecycle regression tests
+        run: node --test test/screen-stream.test.js

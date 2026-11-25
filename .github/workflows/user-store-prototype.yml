@@ -1,0 +1,26 @@
+name: Memory and journal user ID isolation
+on:
+  pull_request:
+    paths:
+      - "index.js"
+      - "test/user-store-prototype.test.js"
+      - ".github/workflows/user-store-prototype.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prototype-userid:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Verify syntax and prototype-like user ID isolation
+        run: |
+          node --check index.js
+          node --check test/user-store-prototype.test.js
+          node --test test/user-store-prototype.test.js
