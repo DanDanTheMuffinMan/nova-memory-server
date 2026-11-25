@@ -665,11 +665,12 @@ app.get('/media', (req, res) => {
 app.get('/media/:userId/:mediaId', (req, res) => {
   const { userId, mediaId } = req.params;
   
-  if (!mediaStore[userId] || !mediaStore[userId][mediaId]) {
+  const entries = mediaStore[userId];
+  if (!entries || !/^(0|[1-9][0-9]*)$/.test(mediaId) || !Object.hasOwn(entries, mediaId)) {
     return res.status(404).json({ error: 'Media not found' });
   }
-  
-  const media = mediaStore[userId][mediaId];
+
+  const media = entries[mediaId];
   res.json({
     success: true,
     media: {

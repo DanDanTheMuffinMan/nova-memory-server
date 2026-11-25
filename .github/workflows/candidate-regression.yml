@@ -34,6 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+          node --test test/bridge-notion-http.cjs
           node test/bridge-idempotency-http.cjs
           node test/user-id-http-smoke.cjs
           node test/runtime-smoke.cjs

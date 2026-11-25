@@ -294,6 +294,12 @@ async function main() {
     small.append('image', new Blob([Buffer.from('mock-image')], { type: 'image/png' }), 'tiny.png');
     const uploaded = await (await request('/upload/image', { method: 'POST', headers: auth, body: small })).json();
     assert.equal(uploaded.mediaId, 0);
+    const mediaPath = '/media/' + encodeURIComponent(user) + '/';
+    const item = await (await request(mediaPath + uploaded.mediaId, { headers: auth })).json();
+    assert.equal(item.media.data, Buffer.from('mock-image').toString('base64'));
+    for (const missingId of ['1', 'length', '00']) {
+      await request(mediaPath + missingId, { headers: auth }, 404);
+    }
 
     const tooLarge = new FormData();
     tooLarge.append('userId', user);

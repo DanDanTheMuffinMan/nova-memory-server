@@ -351,7 +351,7 @@ await nova.post(`${serverUrl}/bridge/entry`, {
 ⚠️ **IMPORTANT:** This server provides powerful control over your computer. Use with caution:
 
 1. **Network Security:**
-   - Run on localhost only by default
+   - Set `NOVA_MEMORY_HOST=127.0.0.1` for a loopback-only listener
    - Use firewall rules to restrict access
    - Authenticate protected requests and Socket.IO connections in every environment
 

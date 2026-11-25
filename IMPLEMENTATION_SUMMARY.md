@@ -146,7 +146,7 @@ socket.on('screen-frame', async (data) => {
 ## Security Considerations
 
 ⚠️ **Important:** This server provides powerful control over the computer:
-1. Run on localhost only (default)
+1. Set `NOVA_MEMORY_HOST=127.0.0.1` to restrict the listener to loopback
 2. Use firewall rules to restrict access
 3. Configure the inbound `NOVA_MEMORY_API_KEY` in each trusted client
 4. Ensure AI agents are properly authorized
