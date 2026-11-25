@@ -8,7 +8,7 @@ const { randomBytes } = require('node:crypto');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const https = require('node:https');
-const net = require('node:net');
+const { waitForLoopbackPort } = require('./fixtures/loopback-readiness.cjs');
 const os = require('node:os');
 const path = require('node:path');
 const { promisify } = require('node:util');
@@ -47,9 +47,7 @@ async function main() {
     const env = Object.fromEntries(['PATH','HOME','TMPDIR','TEMP','SystemRoot']
       .filter(k => process.env[k] !== undefined).map(k => [k, process.env[k]]));
     const key = randomBytes(32).toString('hex');
-    const reserve = net.createServer();
-    const backendPort = await listen(reserve);
-    await close(reserve);
+    let backendPort;
     const trace = [];
     let trapHits = 0;
     let redirectValid = false;
@@ -85,21 +83,11 @@ async function main() {
     const port = await listen(proxy);
     const origin = 'https://127.0.0.1:' + port;
     backend = spawn(process.execPath, ['index.js'], {
-      env: { ...env, PORT: String(backendPort), NOVA_MEMORY_HOST: '127.0.0.1',
+      env: { ...env, PORT: '0', NOVA_MEMORY_HOST: '127.0.0.1',
         NOVA_MEMORY_PUBLIC_ORIGIN: origin, NOVA_MEMORY_API_KEY: key },
-      stdio: 'ignore'
+      stdio: ['ignore', 'pipe', 'ignore']
     });
-    let ready = false;
-    for (let i = 0; i < 100; i++) {
-      if (backend.exitCode !== null) throw new Error('Disposable backend exited early');
-      try {
-        const response = await fetch('http://127.0.0.1:' + backendPort + '/', { signal: AbortSignal.timeout(500) });
-        await response.body?.cancel();
-        if (response.ok) { ready = true; break; }
-      } catch {}
-      await pause(100);
-    }
-    assert.ok(ready, 'Disposable backend did not become ready');
+    backendPort = await waitForLoopbackPort(backend);
     const gateEnv = { ...env, NOVA_STAGING_ORIGIN: origin, NOVA_MEMORY_API_KEY: key };
     const cli = trusted => run(process.execPath, ['check-staging.js'], {
       env: { ...gateEnv, ...(trusted ? { NODE_EXTRA_CA_CERTS: cert } : {}) }, timeout: 45000

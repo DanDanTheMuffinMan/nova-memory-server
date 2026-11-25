@@ -4,23 +4,21 @@
 // This contacts only a local UNOVA webhook stub; never external Notion/UNOVA or personal Macs.
 const assert = require('node:assert/strict');
 const { execFile, spawn } = require('node:child_process');
-const { randomBytes, randomInt } = require('node:crypto');
+const { randomBytes } = require('node:crypto');
+const { waitForLoopbackPort } = require('./fixtures/loopback-readiness.cjs');
 const { once } = require('node:events');
 const http = require('node:http');
 const { promisify } = require('node:util');
 const runClient = promisify(execFile);
 const { io } = require('socket.io-client');
 
-const port = randomInt(34000, 48000);
-const webhookPort = randomInt(48001, 61000);
-const webhookUrl = 'http://127.0.0.1:' + webhookPort + '/ci-unova-webhook';
 const webhookKey = randomBytes(32).toString('hex');
-const base = 'http://127.0.0.1:' + port;
+let base, server;
 const secret = randomBytes(32).toString('hex');
 const user = 'ci-runtime-smoke';
 const env = {
   ...process.env,
-  PORT: String(port),
+  PORT: '0',
   NOVA_MEMORY_HOST: '127.0.0.1',
   NOVA_MEMORY_API_KEY: secret,
   NOVA_MEMORY_PUBLIC_ORIGIN: 'https://nova-staging.example.invalid'
@@ -28,15 +26,10 @@ const env = {
 delete env.DISPLAY;
 delete env.NOTION_TOKEN;
 // Configure only a local loopback UNOVA receiver; never contact real integrations.
-env.UNOVA_WEBHOOK_URL = webhookUrl;
 env.UNOVA_API_KEY = webhookKey;
 env.NO_PROXY = '127.0.0.1,localhost';
 env.no_proxy = '127.0.0.1,localhost';
-const server = spawn(process.execPath, ['index.js'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
 let output = '';
-for (const stream of [server.stdout, server.stderr]) {
-  stream.on('data', (data) => { output = (output + data.toString()).slice(-3000); });
-}
 const auth = { Authorization: 'Bearer ' + secret };
 // Collect real outbound HTTP requests from the composed server without external traffic.
 const deliveries = [];
@@ -99,21 +92,21 @@ function socketOutcome(authorized) {
     socket.once('connect', () => finish(null, 'connected'));
   });
 }
-async function waitForReady() {
-  const expires = Date.now() + 12000;
-  while (Date.now() < expires) {
-    if (server.exitCode !== null) throw new Error('Server exited before listening: ' + output);
-    try { await request('/'); return; } catch (_) { await new Promise(resolve => setTimeout(resolve, 120)); }
-  }
-  throw new Error('Server not ready: ' + output);
-}
 async function main() {
   try {
     await new Promise((resolve, reject) => {
       webhookServer.once('error', reject);
-      webhookServer.listen(webhookPort, '127.0.0.1', resolve);
+      webhookServer.listen(0, '127.0.0.1', resolve);
     });
-    await waitForReady();
+    env.UNOVA_WEBHOOK_URL = 'http://127.0.0.1:' + webhookServer.address().port + '/ci-unova-webhook';
+    server = spawn(process.execPath, ['index.js'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    for (const stream of [server.stdout, server.stderr]) {
+      stream.on('data', data => { output = (output + data.toString()).slice(-3000); });
+    }
+    const port = await waitForLoopbackPort(server);
+    base = 'http://127.0.0.1:' + port;
+    env.PORT = String(port); // only the subsequent client gets the resolved port
+    await request('/');
     const spec = await (await request('/openapi.json')).json();
     assert.deepEqual(spec.servers, [{ url: env.NOVA_MEMORY_PUBLIC_ORIGIN }]);
     const cli = await runClient(process.execPath, ['test-client.js'], { env, timeout: 15000 });
@@ -323,7 +316,7 @@ async function main() {
     if (webhookServer.listening) {
       await new Promise(resolve => webhookServer.close(resolve));
     }
-    if (server.exitCode === null) {
+    if (server && server.exitCode === null && server.signalCode === null) {
       server.kill('SIGTERM');
       await Promise.race([once(server, 'exit'), new Promise(resolve => setTimeout(resolve, 1500))]);
       if (server.exitCode === null) server.kill('SIGKILL');

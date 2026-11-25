@@ -7,20 +7,11 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 const { once } = require('node:events');
-
-async function freePort() {
-  const s = http.createServer();
-  await new Promise((resolve, reject) => s.once('error', reject).listen(0, '127.0.0.1', resolve));
-  const port = s.address().port;
-  await new Promise(resolve => s.close(resolve));
-  return port;
-}
+const { waitForLoopbackPort } = require('./fixtures/loopback-readiness.cjs');
 
 async function main() {
-  const port = await freePort();
   const apiKey = randomBytes(32).toString('hex');
   const auth = { Authorization: `Bearer ${apiKey}` };
-  const receiverPort = await freePort();
   const deliveries = [];
   const receiver = http.createServer(async (req, res) => {
     let buffer = '';
@@ -42,14 +33,14 @@ async function main() {
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end('{}');
   });
-  await new Promise((resolve, reject) => receiver.once('error', reject).listen(receiverPort, '127.0.0.1', resolve));
+  await new Promise((resolve, reject) => receiver.once('error', reject).listen(0, '127.0.0.1', resolve));
 
-  const webhook = 'http://127.0.0.1:' + receiverPort + '/test-webhook';
+  const webhook = 'http://127.0.0.1:'  + receiver.address().port + '/test-webhook';
   const server = spawn(process.execPath, ['index.js'], {
     cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      PORT: String(port),
+      PORT: '0',
       NOVA_MEMORY_HOST: '127.0.0.1',
       NOVA_MEMORY_API_KEY: apiKey,
       NO_PROXY: '127.0.0.1,localhost',
@@ -64,7 +55,7 @@ async function main() {
   server.stdout.on('data', chunk => { log += chunk.toString(); });
   server.stderr.on('data', chunk => { log += chunk.toString(); });
 
-  const base = 'http://127.0.0.1:' + port;
+  let base;
   const body = { userId: 'ci-retry-test', entryType: 'memory', topic: 'one', value: 'saved' };
   const write = (key, payload = body) => fetch(base + '/bridge/entry', {
     method: 'POST',
@@ -72,16 +63,7 @@ async function main() {
     body: JSON.stringify(payload)
   });
   try {
-    let ready = false;
-    for (let i = 0; i < 70; i++) {
-      if (server.exitCode !== null) throw new Error('Service exited: ' + log);
-      try {
-        const result = await fetch(base + '/');
-        if (result.ok) { ready = true; break; }
-      } catch (_) {}
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    assert.equal(ready, true, 'Service not ready: ' + log);
+    base = 'http://127.0.0.1:' + await waitForLoopbackPort(server);
     const spec = await (await fetch(base + '/openapi.json')).json();
     const bridgeSpec = spec.paths['/bridge/entry'].post;
     assert.equal(bridgeSpec.parameters.find(p => p.name === 'Idempotency-Key')?.in, 'header');
