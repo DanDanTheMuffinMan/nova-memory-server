@@ -1,0 +1,38 @@
+name: Consolidated candidate regression
+on:
+  push:
+    branches: ['systems/699f91d299d08191b461d5c6b9280c1b/staging-readiness-2026-11-25']
+
+permissions:
+  contents: read
+
+jobs:
+  direct:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 31a570f5312f3752565ccc49c0b17ae63b83dc21
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify checkout and run native regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "31a570f5312f3752565ccc49c0b17ae63b83dc21"
+          git rev-parse HEAD
+          for file in *.js test/*.js test/*.cjs; do node --check "$file"; done
+          node --test test/*.test.js
+      - name: Exercise the direct checkout with disposable localhost services
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+          node test/runtime-smoke.cjs
