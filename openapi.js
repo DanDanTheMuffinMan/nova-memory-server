@@ -755,9 +755,9 @@ const getOpenApiSpec = (serverUrl) => ({
                   tags: { type: 'array', items: { type: 'string' } },
                   notion: {
                     type: 'object',
-                    description: 'Optional Notion overrides',
+                    description: 'Optional Notion property/version overrides. Database and token are server-owned; databaseId, if supplied, must match the configured database for the entry type.',
                     properties: {
-                      databaseId: { type: 'string' },
+                      databaseId: { type: 'string', description: 'Optional assertion of configured database; cannot change destination' },
                       titleProperty: { type: 'string' },
                       tagsProperty: { type: 'string' },
                       userProperty: { type: 'string' },

@@ -95,7 +95,7 @@ Quick overview:
 - `POST /bridge/entry` with `{ userId, entryType, ... }` - Store a memory/journal entry and sync to UNOVA + Notion
   - Memory payload: `{ entryType: "memory", topic, value }`
   - Journal payload: `{ entryType: "journal", title, content }`
-  - Optional: `tags`, `notion` overrides, and `unova.eventName`. The server owns the webhook URL and credential.
+  - Optional: `tags`, Notion property/version overrides, and `unova.eventName`. The server owns both integrations' credentials and destinations. A legacy `notion.databaseId` is accepted only when it exactly matches the configured database for the entry type; request tokens and mismatched IDs are rejected without Notion delivery. The local entry remains stored; inspect `notion.success`.
 
 ### Real-Time Streaming (WebSocket)
 Connect to WebSocket server at `ws://localhost:3000`

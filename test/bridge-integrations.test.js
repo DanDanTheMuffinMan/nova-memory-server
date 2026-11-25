@@ -51,19 +51,42 @@ test('Notion bridge uses a defined URL and default API version', async () => {
   assert.equal(body.properties.EntryType.select.name, 'memory');
 });
 
-test('Notion bridge honors explicit version/database overrides', async () => {
+test('Notion bridge allows matching database assertion and explicit API version', async () => {
   const calls = [];
   const { createNotionEntry } = createBridgeIntegrations({
-    env: {},
+    env: { NOTION_TOKEN: 'server-token', NOTION_DATABASE_ID: 'configured-db' },
     post: async (...args) => { calls.push(args); return { data: { id: 'custom-page' } }; }
   });
   const result = await createNotionEntry({
-    ...record,
-    overrides: { token: 'override-token', databaseId: 'custom-db', version: '2022-02-22' }
+    ...record, overrides: { databaseId: 'configured-db', version: '2022-02-22' }
   });
   assert.equal(result.success, true);
-  assert.equal(calls[0][1].parent.database_id, 'custom-db');
+  assert.equal(calls[0][1].parent.database_id, 'configured-db');
+  assert.equal(calls[0][2].headers.Authorization, 'Bearer server-token');
   assert.equal(calls[0][2].headers['Notion-Version'], '2022-02-22');
+});
+
+test('Notion request cannot borrow server identity for another database or inject a token', async () => {
+  let calls = 0;
+  const bridge = createBridgeIntegrations({
+    env: { NOTION_TOKEN: 'server-token', NOTION_MEMORY_DATABASE_ID: 'memory-db',
+      NOTION_JOURNAL_DATABASE_ID: 'journal-db', NOTION_DATABASE_ID: 'shared-db' },
+    post: async () => { calls++; return { data: { id: 'page' } }; }
+  });
+  for (const overrides of [{ databaseId: 'unrelated-db' }, { databaseId: 'journal-db' },
+    { databaseId: 'shared-db' }, { token: 'caller-token' }, { token: null },
+    { token: 'server-token' }, { databaseId: null }, [], 'invalid']) {
+    const result = await bridge.createNotionEntry({ ...record, overrides });
+    assert.equal(result.success, false);
+  }
+  assert.equal(calls, 0);
+  const unconfigured = createBridgeIntegrations({
+    env: {}, post: async () => { calls++; return { data: { id: 'page' } }; }
+  });
+  assert.equal((await unconfigured.createNotionEntry({
+    ...record, overrides: { token: 'caller-token', databaseId: 'caller-db' }
+  })).success, false);
+  assert.equal(calls, 0);
 });
 
 test('Notion delivery failure is reported, not rethrown as bridge write failure', async () => {
@@ -166,7 +189,7 @@ test('exact configured URL is allowed without changing server bearer token', asy
   assert.equal(calls[0][2].headers.Authorization, 'Bearer server-key');
 });
 
-test('Notion bridge routes entries to configured per-type databases and preserves explicit overrides', async () => {
+test('Notion bridge routes entries to configured per-type databases and rejects different destinations', async () => {
   const destinations = [];
   const { createNotionEntry } = createBridgeIntegrations({
     env: {
@@ -183,8 +206,8 @@ test('Notion bridge routes entries to configured per-type databases and preserve
   for (const entryType of ['memory', 'journal']) {
     assert.equal((await createNotionEntry({ ...record, entryType })).success, true);
   }
-  await createNotionEntry({ ...record, overrides: { databaseId: 'custom-db' } });
-  assert.deepEqual(destinations, ['memory-db', 'journal-db', 'custom-db']);
+  assert.equal((await createNotionEntry({ ...record, overrides: { databaseId: 'custom-db' } })).success, false);
+  assert.deepEqual(destinations, ['memory-db', 'journal-db']);
 
   const journalOnly = createBridgeIntegrations({
     env: { NOTION_TOKEN: 'test-token', NOTION_JOURNAL_DATABASE_ID: 'journal-db' },

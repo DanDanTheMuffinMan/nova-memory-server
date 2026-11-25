@@ -89,4 +89,22 @@ test('authenticated journal bridge uses its Notion database and replays one deli
     assert.equal(call.body.parent.database_id, 'offline-journal');
     assert.equal(call.body.properties.Name.title[0].text.content, entry.title);
     assert.equal(call.body.children[0].paragraph.rich_text[0].text.content, entry.content);
+
+    // These authenticated requests must never reach the Notion transport.
+    // Local storage is intentionally independent of optional delivery.
+    for (const [i, notion] of [{ databaseId: 'offline-memory' },
+      { databaseId: 'unrelated-db' }, { token: 'caller-token' }].entries()) {
+      const deniedDelivery = await fetch(base + '/bridge/entry', {
+        method: 'POST',
+        headers: { ...auth, 'Content-Type': 'application/json', 'Idempotency-Key': 'denied-' + i },
+        body: JSON.stringify({ ...entry, userId: 'override-test-user', notion }),
+        signal: AbortSignal.timeout(5000)
+      });
+      assert.equal(deniedDelivery.status, 200);
+      const body = await deniedDelivery.json();
+      assert.equal(body.success, true);
+      assert.equal(body.notion.success, false);
+    }
+    assert.equal((await readFile(receipt, 'utf8')).trim().split('\n').length, 1,
+      'rejected overrides must not produce any additional serialized requests');
   });

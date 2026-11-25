@@ -34,8 +34,8 @@ function createBridgeIntegrations({
     ['journal', env.NOTION_JOURNAL_DATABASE_ID]
   ]);
   const resolveNotionConfig = (entryType, overrides = {}) => ({
-    token: overrides.token || env.NOTION_TOKEN,
-    databaseId: overrides.databaseId || databases.get(entryType) || env.NOTION_DATABASE_ID,
+    token: env.NOTION_TOKEN,
+    databaseId: databases.get(entryType) || env.NOTION_DATABASE_ID,
     titleProperty: overrides.titleProperty || env.NOTION_TITLE_PROPERTY || 'Name',
     tagsProperty: overrides.tagsProperty || env.NOTION_TAGS_PROPERTY,
     userProperty: overrides.userProperty || env.NOTION_USER_PROPERTY,
@@ -93,7 +93,15 @@ function createBridgeIntegrations({
     ];
   };
   
-  const createNotionEntry = async ({ title, content, tags, userId, entryType, overrides }) => {
+  const createNotionEntry = async ({ title, content, tags, userId, entryType, overrides = {} }) => {
+    // Do not let an API caller borrow the server's Notion integration identity
+    // to write into a different database, or inject credentials into the bridge.
+    const databaseId = databases.get(entryType) || env.NOTION_DATABASE_ID;
+    if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides) ||
+        Object.hasOwn(overrides, 'token') ||
+        (Object.hasOwn(overrides, 'databaseId') && overrides.databaseId !== databaseId)) {
+      return { enabled: false, success: false, error: 'Notion database and token must be configured on the server' };
+    }
     const config = resolveNotionConfig(entryType, overrides);
     if (!config.token || !config.databaseId) {
       return { enabled: false };
