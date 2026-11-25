@@ -5,7 +5,9 @@ const { checkStaging } = require('../check-staging');
 const { getOpenApiSpec } = require('../openapi');
 const origin = 'https://staging.example.invalid';
 const key = 'a'.repeat(64);
-const response = (status, body) => ({ status, json: async () => body });
+const expectedSha = 'b'.repeat(40);
+const response = (status, body, build = expectedSha) => ({ status,
+  headers: new Headers(build ? { 'X-Nova-Staging-Build': build } : {}), json: async () => body });
 
 function fixture(overrides = {}) {
   const calls = [];
@@ -22,8 +24,8 @@ function fixture(overrides = {}) {
 
 test('staging gate uses only read-only requests to the explicit origin and reports no secret', async () => {
   const { calls, request } = fixture();
-  const result = await checkStaging({ origin, key, request });
-  assert.deepEqual(result, { schema: 'pass', anonymous: 'denied', wrongKey: 'denied',
+  const result = await checkStaging({ origin, key, expectedSha, request });
+  assert.deepEqual(result, { schema: 'pass', buildIdentity: 'matched', anonymous: 'denied', wrongKey: 'denied',
     stagingKey: 'admitted', notionConfigured: true, memoryDatabaseConfigured: true, journalDatabaseConfigured: true });
   assert.equal(calls.length, 4);
   assert.deepEqual(calls.map(c => c.url), [origin + '/openapi.json', ...Array(3).fill(origin + '/notion/status')]);
@@ -39,10 +41,10 @@ test('rejects production, unsafe origins and malformed staging secrets before an
   const { calls, request } = fixture();
   for (const badOrigin of ['https://nova-memory-server.onrender.com', 'http://localhost:3000',
     'https://user:pass@staging.example.invalid', origin + '/path', origin + '?x=1', origin + '#fragment']) {
-    await assert.rejects(checkStaging({ origin: badOrigin, key, request }));
+    await assert.rejects(checkStaging({ origin: badOrigin, key, expectedSha, request }));
   }
   for (const badKey of ['', 'x'.repeat(31), ' '.repeat(32), key + '\n']) {
-    await assert.rejects(checkStaging({ origin, key: badKey, request }));
+    await assert.rejects(checkStaging({ origin, key: badKey, expectedSha, request }));
   }
   assert.equal(calls.length, 0);
 });
@@ -53,7 +55,7 @@ test('schema drift or redirect stops before any credentials are sent', async () 
   for (const reply of [response(307), response(200, getOpenApiSpec('https://other.example.invalid')),
     response(200, publicOverride), response(200, null)]) {
     const { calls, request } = fixture({ 0: reply });
-    await assert.rejects(checkStaging({ origin, key, request }), /Schema/);
+    await assert.rejects(checkStaging({ origin, key, expectedSha, request }), /Schema/);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].options.headers.Authorization, undefined);
   }
@@ -62,7 +64,7 @@ test('schema drift or redirect stops before any credentials are sent', async () 
 test('anonymous access, wrong-key admission and 503 fail before using the real key', async () => {
   for (const overrides of [{ 1: response(200) }, { 1: response(503) }, { 2: response(200) }, { 2: response(307) }]) {
     const { calls, request } = fixture(overrides);
-    await assert.rejects(checkStaging({ origin, key, request }), /admission/);
+    await assert.rejects(checkStaging({ origin, key, expectedSha, request }), /admission/);
     assert.ok(calls.every(c => c.options.headers.Authorization !== 'Bearer ' + key));
   }
 });
@@ -70,7 +72,7 @@ test('anonymous access, wrong-key admission and 503 fail before using the real k
 test('transport failure and remote rejection do not leak remote messages or secrets', async () => {
   for (const reply of [new Error('private transport detail ' + key), response(403, { error: key }), response(307)]) {
     const { calls, request } = fixture({ 3: reply });
-    await assert.rejects(checkStaging({ origin, key, request }), error => {
+    await assert.rejects(checkStaging({ origin, key, expectedSha, request }), error => {
       assert.match(error.message, /Staging-key admission/);
       assert.ok(!error.message.includes(key));
       return true;
@@ -81,8 +83,22 @@ test('transport failure and remote rejection do not leak remote messages or secr
 
 test('missing Notion bindings are distinguished from successful HTTP authentication', async () => {
   const { request } = fixture({ 3: response(200, { configured: false, databases: { memory: true, journal: false } }) });
-  const result = await checkStaging({ origin, key, request });
+  const result = await checkStaging({ origin, key, expectedSha, request });
   assert.equal(result.stagingKey, 'admitted');
   assert.equal(result.notionConfigured, false);
   assert.equal(result.journalDatabaseConfigured, false);
+});
+
+test('missing staging opt-in or stale build blocks all bearer requests', async () => {
+  for (const build of [null, 'c'.repeat(40)]) {
+    const { calls, request } = fixture({ 0: response(200, getOpenApiSpec(origin), build) });
+    await assert.rejects(checkStaging({ origin, key, expectedSha, request }), /build identity/);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].options.headers.Authorization, undefined);
+  }
+  const { calls, request } = fixture();
+  for (const sha of [undefined, '', 'abc', 'Z'.repeat(40)]) {
+    await assert.rejects(checkStaging({ origin, key, expectedSha: sha, request }), /EXPECTED_SHA/);
+  }
+  assert.equal(calls.length, 0);
 });

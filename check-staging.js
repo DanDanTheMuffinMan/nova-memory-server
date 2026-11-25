@@ -15,8 +15,11 @@ function stagingOrigin(value) {
   return parsed.origin;
 }
 
-async function checkStaging({ origin, key, request = fetch } = {}) {
+async function checkStaging({ origin, key, expectedSha, request = fetch } = {}) {
   const base = stagingOrigin(origin);
+  if (typeof expectedSha !== 'string' || !/^[a-f0-9]{40}$/.test(expectedSha)) {
+    throw new Error('Set NOVA_STAGING_EXPECTED_SHA to the full reviewed commit SHA');
+  }
   if (typeof key !== 'string' || key.length < 32 || !/^[A-Za-z0-9._~+/-]+=*$/.test(key)) {
     throw new Error('Configure a valid staging-only bearer key of at least 32 ASCII characters');
   }
@@ -38,6 +41,9 @@ async function checkStaging({ origin, key, request = fetch } = {}) {
   }
   const schemaResponse = await get('/openapi.json', 'Schema');
   if (schemaResponse.status !== 200) throw new Error('Schema: expected HTTP 200, got ' + schemaResponse.status);
+  if (schemaResponse.headers?.get('X-Nova-Staging-Build') !== expectedSha) {
+    throw new Error('Schema: missing staging opt-in or unexpected build identity');
+  }
   const schema = await json(schemaResponse, 'Schema');
   const scheme = schema?.components?.securitySchemes?.bearerAuth;
   if (schema?.info?.title !== 'Nova Memory Server' || schema?.servers?.length !== 1 ||
@@ -61,13 +67,14 @@ async function checkStaging({ origin, key, request = fetch } = {}) {
     throw new Error('Notion status: unexpected response shape');
   }
   // Report booleans only. Never output the key, schema, response body or private records.
-  return { schema: 'pass', anonymous: 'denied', wrongKey: 'denied', stagingKey: 'admitted',
+  return { schema: 'pass', buildIdentity: 'matched', anonymous: 'denied', wrongKey: 'denied', stagingKey: 'admitted',
     notionConfigured: status.configured, memoryDatabaseConfigured: status.databases.memory,
     journalDatabaseConfigured: status.databases.journal };
 }
 
 if (require.main === module) {
-  checkStaging({ origin: process.env.NOVA_STAGING_ORIGIN, key: process.env.NOVA_MEMORY_API_KEY })
+  checkStaging({ origin: process.env.NOVA_STAGING_ORIGIN, key: process.env.NOVA_MEMORY_API_KEY,
+    expectedSha: process.env.NOVA_STAGING_EXPECTED_SHA })
     .then(result => console.log(JSON.stringify(result)))
     .catch(error => { console.error('STAGING GATE FAILED: ' + error.message); process.exitCode = 1; });
 }

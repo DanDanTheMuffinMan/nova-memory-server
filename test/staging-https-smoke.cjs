@@ -47,6 +47,7 @@ async function main() {
     const env = Object.fromEntries(['PATH','HOME','TMPDIR','TEMP','SystemRoot']
       .filter(k => process.env[k] !== undefined).map(k => [k, process.env[k]]));
     const key = randomBytes(32).toString('hex');
+    const build = randomBytes(20).toString('hex');
     let backendPort;
     const trace = [];
     let trapHits = 0;
@@ -73,7 +74,8 @@ async function main() {
         path: req.url, method: 'GET', headers: {
           Accept: 'application/json', ...(auth ? { Authorization: auth } : {})
         } }, reply => {
-        res.writeHead(reply.statusCode, { 'Content-Type': reply.headers['content-type'] || 'application/json' });
+        res.writeHead(reply.statusCode, { 'Content-Type': reply.headers['content-type'] || 'application/json',
+          ...(reply.headers['x-nova-staging-build'] ? { 'X-Nova-Staging-Build': reply.headers['x-nova-staging-build'] } : {}) });
         reply.pipe(res);
       });
       upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(); });
@@ -84,21 +86,25 @@ async function main() {
     const origin = 'https://127.0.0.1:' + port;
     backend = spawn(process.execPath, ['index.js'], {
       env: { ...env, PORT: '0', NOVA_MEMORY_HOST: '127.0.0.1',
-        NOVA_MEMORY_PUBLIC_ORIGIN: origin, NOVA_MEMORY_API_KEY: key },
+        NOVA_MEMORY_PUBLIC_ORIGIN: origin, NOVA_MEMORY_API_KEY: key, NOVA_STAGING_BUILD_SHA: build },
       stdio: ['ignore', 'pipe', 'ignore']
     });
     backendPort = await waitForLoopbackPort(backend);
-    const gateEnv = { ...env, NOVA_STAGING_ORIGIN: origin, NOVA_MEMORY_API_KEY: key };
-    const cli = trusted => run(process.execPath, ['check-staging.js'], {
-      env: { ...gateEnv, ...(trusted ? { NODE_EXTRA_CA_CERTS: cert } : {}) }, timeout: 45000
+    const gateEnv = { ...env, NOVA_STAGING_ORIGIN: origin, NOVA_MEMORY_API_KEY: key, NOVA_STAGING_EXPECTED_SHA: build };
+    const cli = (trusted, expectedBuild = build) => run(process.execPath, ['check-staging.js'], {
+      env: { ...gateEnv, NOVA_STAGING_EXPECTED_SHA: expectedBuild, ...(trusted ? { NODE_EXTRA_CA_CERTS: cert } : {}) }, timeout: 45000
     });
     // Fail-closed on an untrusted certificate, before any HTTP request or bearer is sent.
     await assert.rejects(cli(false), e => e.code === 1 && /Schema: transport failed/.test(e.stderr || '') && !String(e.stderr).includes(key));
     assert.equal(trace.length, 0);
     console.log('PASS: untrusted TLS rejected before any HTTP request');
+    await assert.rejects(cli(true, '0'.repeat(40)), e => e.code === 1 && /unexpected build identity/.test(e.stderr || ''));
+    assert.deepEqual(trace, [['/openapi.json','anonymous']]);
+    trace.length = 0;
+    console.log('PASS: stale staging build rejected before bearer admission');
     const result = await cli(true);
     assert.ok(!result.stdout.includes(key) && !result.stderr.includes(key), 'Gate disclosed disposable key');
-    assert.deepEqual(JSON.parse(result.stdout), { schema: 'pass', anonymous: 'denied', wrongKey: 'denied',
+    assert.deepEqual(JSON.parse(result.stdout), { schema: 'pass', buildIdentity: 'matched', anonymous: 'denied', wrongKey: 'denied',
       stagingKey: 'admitted', notionConfigured: false, memoryDatabaseConfigured: false, journalDatabaseConfigured: false });
     const expected = [['/openapi.json','anonymous'], ['/notion/status','anonymous'],
       ['/notion/status','wrong'], ['/notion/status','valid']];

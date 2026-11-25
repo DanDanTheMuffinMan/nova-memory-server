@@ -23,6 +23,13 @@ const io = socketIO(server, {
 const port = process.env.PORT || 3000;
 const bindHost = process.env.NOVA_MEMORY_HOST || undefined;
 const publicOrigin = parsePublicOrigin(process.env.NOVA_MEMORY_PUBLIC_ORIGIN);
+// Explicit staging opt-in; never infer staging merely from a hostname.
+const stagingBuild = process.env.NOVA_STAGING_BUILD_SHA;
+const renderBuild = process.env.RENDER_GIT_COMMIT;
+if (stagingBuild !== undefined && (!/^[a-f0-9]{40}$/.test(stagingBuild) ||
+    (renderBuild !== undefined && renderBuild !== stagingBuild))) {
+  throw new Error('Invalid staging build identity or mismatch with Render checkout');
+}
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
@@ -336,6 +343,7 @@ app.post('/notion/journal', async (req, res) => {
 // GET /openapi.json - Serve schema for Custom GPT actions
 app.get('/openapi.json', (req, res) => {
   const serverUrl = publicOrigin || `${req.protocol}://${req.get('host')}`;
+  if (stagingBuild) res.set('X-Nova-Staging-Build', stagingBuild);
   res.json(getOpenApiSpec(serverUrl));
 });
 
