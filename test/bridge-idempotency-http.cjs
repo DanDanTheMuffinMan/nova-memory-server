@@ -34,6 +34,11 @@ async function main() {
       res.writeHead(307, { Location: '/unexpected-redirect-target' });
       return res.end();
     }
+    if (req.url === '/test-webhook' && topic === 'reflected-error') {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ reflectedAuthorization: req.headers.authorization,
+        privateResponse: 'private-upstream-fixture' }));
+    }
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end('{}');
   });
@@ -118,6 +123,21 @@ async function main() {
     assert.deepEqual(await replay.json(), rejected);
     assert.equal(deliveries.length, 3, 'keyed retry must not resend failed delivery');
     console.log('PASS: real HTTP retries, conflicting key 409, and 307 redirect containment with no redirected delivery');
+    const errorBody = { ...body, topic: 'reflected-error' };
+    const failed = await write('ci-reflected-error', errorBody);
+    assert.equal(failed.status, 200);
+    const failedText = await failed.text();
+    assert.ok(!failedText.includes('ci-test-key') && !failedText.includes('private-upstream-fixture'));
+    const failedResult = JSON.parse(failedText);
+    assert.equal(failedResult.success, true);
+    assert.deepEqual(failedResult.unova, { enabled: true, success: false, status: 502,
+      error: 'Bridge delivery rejected by upstream; remote outcome unknown' });
+    assert.equal(deliveries.length, 4);
+    const repeatedFailure = await write('ci-reflected-error', errorBody);
+    assert.equal(repeatedFailure.status, 200);
+    assert.deepEqual(await repeatedFailure.json(), failedResult);
+    assert.equal(deliveries.length, 4, 'replayed failure must not resend upstream');
+    console.log('PASS: upstream error body and reflected bearer withheld from HTTP response and keyed replay');
   } finally {
     server.kill('SIGTERM');
     await Promise.race([once(server, 'exit'), new Promise(resolve => setTimeout(resolve, 1500))]);

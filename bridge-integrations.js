@@ -4,6 +4,21 @@
 const NOTION_API_URL = 'https://api.notion.com/v1/pages';
 const DEFAULT_NOTION_VERSION = '2022-06-28';
 const DELIVERY_TIMEOUT_MS = 10_000;
+class BridgeDeliveryTimeout extends Error {}
+
+// Upstream responses and transport exceptions can contain private data,
+// reflected authorization headers, or internal URLs. Return only bounded
+// diagnostics; never cache or relay the raw response body or error message.
+function deliveryFailure(error) {
+  if (error instanceof BridgeDeliveryTimeout) {
+    return { enabled: true, success: false, error: 'Bridge delivery timed out; remote outcome unknown' };
+  }
+  const status = error?.response?.status;
+  if (Number.isInteger(status) && status >= 300 && status <= 599) {
+    return { enabled: true, success: false, status, error: 'Bridge delivery rejected by upstream; remote outcome unknown' };
+  }
+  return { enabled: true, success: false, error: 'Bridge delivery failed; remote outcome unknown' };
+}
 
 function createBridgeIntegrations({
   env = process.env,
@@ -15,7 +30,7 @@ function createBridgeIntegrations({
     let timer;
     const deadline = new Promise((_, reject) => {
       timer = setTimeout(() => {
-        reject(new Error('Bridge delivery timed out; remote outcome unknown'));
+        reject(new BridgeDeliveryTimeout());
         controller.abort();
       }, deliveryTimeoutMs);
     });
@@ -135,11 +150,7 @@ function createBridgeIntegrations({
         url: response.data?.url
       };
     } catch (error) {
-      return {
-        enabled: true,
-        success: false,
-        error: error.response?.data || error.message
-      };
+      return deliveryFailure(error);
     }
   };
   
@@ -173,11 +184,7 @@ function createBridgeIntegrations({
         status: response.status
       };
     } catch (error) {
-      return {
-        enabled: true,
-        success: false,
-        error: error.response?.data || error.message
-      };
+      return deliveryFailure(error);
     }
   };
 

@@ -98,7 +98,7 @@ test('Notion delivery failure is reported, not rethrown as bridge write failure'
   const result = await createNotionEntry(record);
   assert.equal(result.enabled, true);
   assert.equal(result.success, false);
-  assert.equal(result.error, 'simulated remote outage');
+  assert.equal(result.error, 'Bridge delivery failed; remote outcome unknown');
 });
 
 test('UNOVA bridge posts configured event with bearer header', async () => {
@@ -139,7 +139,7 @@ test('UNOVA remote failure returns a structured unsuccessful integration result'
   const result = await sendUnovaEvent({ payload: record });
   assert.equal(result.enabled, true);
   assert.equal(result.success, false);
-  assert.equal(result.error, 'simulated webhook outage');
+  assert.equal(result.error, 'Bridge delivery failed; remote outcome unknown');
 });
 
 test('untrusted request URL cannot redirect server bearer token', async () => {
@@ -248,3 +248,29 @@ test('stalled deliveries settle with an unknown remote outcome and abort both tr
     assert.equal(signals.length, 2);
     assert.ok(signals.every(signal => signal.aborted));
   });
+
+test('both bridge transports redact upstream bodies and transport exceptions', async () => {
+  const env = { NOTION_TOKEN: 'private-notion-fixture', NOTION_DATABASE_ID: 'private-db',
+    UNOVA_WEBHOOK_URL: 'https://private.invalid/hook', UNOVA_API_KEY: 'private-webhook-fixture' };
+  for (const status of [307, 401, 429, 500]) {
+    const bridge = createBridgeIntegrations({ env, post: async (url, body, options) => {
+      throw Object.assign(new Error('private transport detail'), {
+        response: { status, data: { reflected: options.headers.Authorization, privateBody: body } }
+      });
+    } });
+    for (const result of await Promise.all([bridge.createNotionEntry(record),
+      bridge.sendUnovaEvent({ payload: record })])) {
+      assert.deepEqual(result, { enabled: true, success: false, status,
+        error: 'Bridge delivery rejected by upstream; remote outcome unknown' });
+    }
+  }
+  for (const error of [new Error('private token and URL: ' + env.UNOVA_API_KEY + env.UNOVA_WEBHOOK_URL),
+    { response: { status: '500', data: 'private' } }, null]) {
+    const bridge = createBridgeIntegrations({ env, post: async () => { throw error; } });
+    for (const result of await Promise.all([bridge.createNotionEntry(record),
+      bridge.sendUnovaEvent({ payload: record })])) {
+      assert.deepEqual(result, { enabled: true, success: false,
+        error: 'Bridge delivery failed; remote outcome unknown' });
+    }
+  }
+});
