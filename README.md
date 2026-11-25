@@ -19,6 +19,16 @@ For staging on one machine, set `NOVA_MEMORY_HOST=127.0.0.1`. For a TLS-terminat
 
 **Rollout condition:** Configure the server secret and each existing HTTP/Socket.IO client first. Otherwise, adopting this security patch will intentionally disable those operations until configured. This draft does not deploy or rotate credentials.
 
+### Read-only external staging acceptance gate
+
+From the reviewed candidate checkout, set `NOVA_STAGING_ORIGIN` to an explicitly designated nonproduction HTTPS origin and load its separate `NOVA_MEMORY_API_KEY` from a private secret store. Run:
+
+```bash
+node check-staging.js
+```
+
+The gate checks the public schema's exact origin and bearer contract, anonymous and wrong-key rejection, and authenticated Notion configuration status. It never follows redirects, writes entries, performs capture, sends a webhook, or prints credentials or response bodies. The known Render production hostname is rejected. A pass is not evidence of live GPT Action credential binding, external delivery, or Mac permissions; those require separate authorized verification.
+
 ## 🚀 Quick Start with Custom GPT
 
 Want to give your ChatGPT the ability to control your computer, capture screenshots, and remember things? 
