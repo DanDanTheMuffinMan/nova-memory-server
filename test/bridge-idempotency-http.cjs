@@ -29,6 +29,11 @@ async function main() {
       method: req.method, url: req.url, auth: req.headers.authorization,
       body: JSON.parse(buffer)
     });
+    const topic = deliveries[deliveries.length - 1].body.payload?.topic;
+    if (req.url === '/test-webhook' && topic === 'redirect') {
+      res.writeHead(307, { Location: '/unexpected-redirect-target' });
+      return res.end();
+    }
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end('{}');
   });
@@ -101,7 +106,18 @@ async function main() {
     assert.equal(deliveries[0].method, 'POST');
     assert.equal(deliveries[0].url, '/test-webhook');
     assert.equal(deliveries[0].auth, 'Bearer ci-test-key');
-    console.log('PASS: real HTTP sequential/concurrent retries store 2 entries and deliver 2 events, conflicting key 409, no duplicate writes');
+    const redirectBody = { ...body, topic: 'redirect' };
+    const redirect = await write('ci-redirect', redirectBody);
+    assert.equal(redirect.status, 200);
+    const rejected = await redirect.json();
+    assert.equal(rejected.success, true, 'local storage remains independent');
+    assert.equal(rejected.unova.success, false, '307 must be treated as delivery failure');
+    assert.equal(deliveries.length, 3, 'redirect target must receive no request');
+    assert.equal(deliveries[2].url, '/test-webhook');
+    const replay = await write('ci-redirect', redirectBody);
+    assert.deepEqual(await replay.json(), rejected);
+    assert.equal(deliveries.length, 3, 'keyed retry must not resend failed delivery');
+    console.log('PASS: real HTTP retries, conflicting key 409, and 307 redirect containment with no redirected delivery');
   } finally {
     server.kill('SIGTERM');
     await Promise.race([once(server, 'exit'), new Promise(resolve => setTimeout(resolve, 1500))]);

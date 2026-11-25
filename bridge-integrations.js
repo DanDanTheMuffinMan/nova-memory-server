@@ -21,7 +21,8 @@ function createBridgeIntegrations({
     });
     try {
       return await Promise.race([
-        post(url, body, { ...options, signal: controller.signal }),
+        // A redirect can forward private payloads and credentials to an unapproved endpoint.
+        post(url, body, { ...options, maxRedirects: 0, signal: controller.signal }),
         deadline
       ]);
     } finally {

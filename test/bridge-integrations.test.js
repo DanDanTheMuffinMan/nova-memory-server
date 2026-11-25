@@ -44,6 +44,7 @@ test('Notion bridge uses a defined URL and default API version', async () => {
   assert.equal(url, 'https://api.notion.com/v1/pages');
   assert.equal(config.headers['Notion-Version'], '2022-06-28');
   assert.equal(config.headers.Authorization, 'Bearer fake-test-token');
+  assert.equal(config.maxRedirects, 0, 'Notion delivery must never follow redirects');
   assert.equal(body.parent.database_id, 'test-database');
   assert.equal(body.properties.Name.title[0].text.content, record.title);
   assert.equal(body.properties.Tags.multi_select[0].name, 'operations');
@@ -117,6 +118,7 @@ test('UNOVA bridge posts configured event with bearer header', async () => {
   assert.equal(calls[0][1].event, 'nova.test');
   assert.equal(calls[0][1].payload.userId, 'sample-user');
   assert.equal(calls[0][2].headers.Authorization, 'Bearer fake-event-token');
+  assert.equal(calls[0][2].maxRedirects, 0, 'webhook delivery must never follow redirects');
 });
 
 test('UNOVA bridge omits authorization without a configured key', async () => {
