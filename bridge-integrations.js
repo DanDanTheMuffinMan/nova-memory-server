@@ -3,14 +3,39 @@
 // Optional Notion/UNOVA delivery for /bridge/entry, isolated for dependency-free tests.
 const NOTION_API_URL = 'https://api.notion.com/v1/pages';
 const DEFAULT_NOTION_VERSION = '2022-06-28';
+const DELIVERY_TIMEOUT_MS = 10_000;
 
 function createBridgeIntegrations({
   env = process.env,
+  deliveryTimeoutMs = DELIVERY_TIMEOUT_MS,
   post = (...args) => require('axios').post(...args)
 } = {}) {
-  const resolveNotionConfig = (overrides = {}) => ({
+  async function postWithDeadline(url, body, options) {
+    const controller = new AbortController();
+    let timer;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error('Bridge delivery timed out; remote outcome unknown'));
+        controller.abort();
+      }, deliveryTimeoutMs);
+    });
+    try {
+      return await Promise.race([
+        post(url, body, { ...options, signal: controller.signal }),
+        deadline
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  const databases = new Map([
+    ['memory', env.NOTION_MEMORY_DATABASE_ID],
+    ['journal', env.NOTION_JOURNAL_DATABASE_ID]
+  ]);
+  const resolveNotionConfig = (entryType, overrides = {}) => ({
     token: overrides.token || env.NOTION_TOKEN,
-    databaseId: overrides.databaseId || env.NOTION_DATABASE_ID,
+    databaseId: overrides.databaseId || databases.get(entryType) || env.NOTION_DATABASE_ID,
     titleProperty: overrides.titleProperty || env.NOTION_TITLE_PROPERTY || 'Name',
     tagsProperty: overrides.tagsProperty || env.NOTION_TAGS_PROPERTY,
     userProperty: overrides.userProperty || env.NOTION_USER_PROPERTY,
@@ -69,7 +94,7 @@ function createBridgeIntegrations({
   };
   
   const createNotionEntry = async ({ title, content, tags, userId, entryType, overrides }) => {
-    const config = resolveNotionConfig(overrides);
+    const config = resolveNotionConfig(entryType, overrides);
     if (!config.token || !config.databaseId) {
       return { enabled: false };
     }
@@ -78,7 +103,7 @@ function createBridgeIntegrations({
     const children = buildNotionChildren({ content });
   
     try {
-      const response = await post(
+      const response = await postWithDeadline(
         NOTION_API_URL,
         {
           parent: { database_id: config.databaseId },
@@ -119,7 +144,7 @@ function createBridgeIntegrations({
     }
   
     try {
-      const response = await post(
+      const response = await postWithDeadline(
         config.webhookUrl,
         {
           event: config.eventName,

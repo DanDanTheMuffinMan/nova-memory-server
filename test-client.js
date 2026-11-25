@@ -1,18 +1,55 @@
 /**
  * Test client for Nova Memory Server
- * Demonstrates usage of all peripheral control and media capture endpoints
+ * Verifies read-only REST and Socket.IO admission on the local server.
+ * Pass --peripherals to also run the interactive, state-changing demo.
  */
 
 const axios = require('axios');
 const io = require('socket.io-client');
 
-const BASE_URL = 'http://localhost:3000';
+const port = Number(process.env.PORT || 3000);
+const apiKey = process.env.NOVA_MEMORY_API_KEY;
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  console.error('PORT must be a valid TCP port');
+  process.exit(1);
+}
+if (!apiKey || Buffer.byteLength(apiKey) < 32 || /\s/.test(apiKey)) {
+  console.error('Set NOVA_MEMORY_API_KEY to the server bearer key (at least 32 bytes, no whitespace)');
+  process.exit(1);
+}
+
+const BASE_URL = 'http://127.0.0.1:' + port;
+const http = axios.create({
+  baseURL: BASE_URL,
+  headers: { Authorization: 'Bearer ' + apiKey },
+  proxy: false,
+  maxRedirects: 0,
+  timeout: 10000
+});
+const socketOptions = { auth: { token: apiKey }, reconnection: false, timeout: 5000 };
+
+async function checkAdmission() {
+  await http.get('/notion/status');
+  await new Promise((resolve, reject) => {
+    const socket = io(BASE_URL, socketOptions);
+    const deadline = setTimeout(() => finish(new Error('Socket.IO admission timed out')), 6000);
+    function finish(error) {
+      clearTimeout(deadline);
+      socket.disconnect();
+      if (error) reject(error);
+      else resolve();
+    }
+    socket.once('connect', () => finish());
+    socket.once('connect_error', finish);
+  });
+  console.log('Authenticated REST and Socket.IO admission passed.');
+}
 
 async function testMemoryEndpoints() {
   console.log('\n=== Testing Memory & Journal Endpoints ===');
   
   // Test memory storage
-  const memoryResponse = await axios.post(`${BASE_URL}/memory`, {
+  const memoryResponse = await http.post('/memory', {
     userId: 'test-user',
     topic: 'preferences',
     value: 'Likes screen automation'
@@ -20,7 +57,7 @@ async function testMemoryEndpoints() {
   console.log('✓ Memory stored:', memoryResponse.data);
   
   // Test memory retrieval
-  const memoryGet = await axios.get(`${BASE_URL}/memory?userId=test-user`);
+  const memoryGet = await http.get('/memory?userId=test-user');
   console.log('✓ Memory retrieved:', memoryGet.data);
 }
 
@@ -29,7 +66,7 @@ async function testKeyboardControl() {
   
   try {
     // Test typing
-    const typeResponse = await axios.post(`${BASE_URL}/control/keyboard/type`, {
+    const typeResponse = await http.post('/control/keyboard/type', {
       text: 'Test typing'
     });
     console.log('✓ Keyboard type:', typeResponse.data);
@@ -39,7 +76,7 @@ async function testKeyboardControl() {
   
   try {
     // Test key press
-    const keyResponse = await axios.post(`${BASE_URL}/control/keyboard/key`, {
+    const keyResponse = await http.post('/control/keyboard/key', {
       key: 'enter'
     });
     console.log('✓ Keyboard key press:', keyResponse.data);
@@ -53,14 +90,14 @@ async function testMouseControl() {
   
   try {
     // Test mouse move
-    const moveResponse = await axios.post(`${BASE_URL}/control/mouse/move`, {
+    const moveResponse = await http.post('/control/mouse/move', {
       x: 100,
       y: 100
     });
     console.log('✓ Mouse move:', moveResponse.data);
     
     // Test get position
-    const posResponse = await axios.get(`${BASE_URL}/control/mouse/position`);
+    const posResponse = await http.get('/control/mouse/position');
     console.log('✓ Mouse position:', posResponse.data);
   } catch (error) {
     console.log('⚠ Mouse control (may require display):', error.response?.data || error.message);
@@ -72,11 +109,11 @@ async function testScreenCapture() {
   
   try {
     // Test screen info
-    const infoResponse = await axios.get(`${BASE_URL}/capture/screen/info`);
+    const infoResponse = await http.get('/capture/screen/info');
     console.log('✓ Screen info:', infoResponse.data);
     
     // Test screenshot
-    const screenshotResponse = await axios.get(`${BASE_URL}/capture/screen?format=png`, {
+    const screenshotResponse = await http.get('/capture/screen?format=png', {
       responseType: 'arraybuffer'
     });
     console.log('✓ Screenshot captured:', screenshotResponse.data.length, 'bytes');
@@ -99,13 +136,13 @@ async function testMediaUpload() {
     formData.append('source', 'camera');
     formData.append('description', 'Test image');
     
-    const uploadResponse = await axios.post(`${BASE_URL}/upload/image`, formData, {
+    const uploadResponse = await http.post('/upload/image', formData, {
       headers: formData.getHeaders()
     });
     console.log('✓ Image uploaded:', uploadResponse.data);
     
     // Test media retrieval
-    const mediaList = await axios.get(`${BASE_URL}/media?userId=test-user`);
+    const mediaList = await http.get('/media?userId=test-user');
     console.log('✓ Media list:', mediaList.data);
   } catch (error) {
     console.log('⚠ Media upload:', error.response?.data || error.message);
@@ -115,8 +152,12 @@ async function testMediaUpload() {
 async function testWebSocketStreaming() {
   console.log('\n=== Testing WebSocket Streaming ===');
   
-  return new Promise((resolve) => {
-    const socket = io(BASE_URL);
+  return new Promise((resolve, reject) => {
+    const socket = io(BASE_URL, socketOptions);
+    socket.once('connect_error', error => {
+      socket.disconnect();
+      reject(error);
+    });
     let frameCount = 0;
     
     socket.on('connect', () => {
@@ -160,10 +201,16 @@ async function testWebSocketStreaming() {
 }
 
 async function runAllTests() {
-  console.log('Starting Nova Memory Server Tests...');
-  console.log('Note: Some tests may fail in headless environments');
-  
+  const args = process.argv.slice(2);
+  if (args.length && (args.length !== 1 || args[0] !== '--peripherals')) {
+    console.error('Usage: node test-client.js [--peripherals]');
+    process.exitCode = 1;
+    return;
+  }
   try {
+    await checkAdmission();
+    if (args.length === 0) return;
+    console.log('Running local keyboard, mouse, capture, memory and upload demo.');
     await testMemoryEndpoints();
     await testKeyboardControl();
     await testMouseControl();

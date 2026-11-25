@@ -1,10 +1,11 @@
 'use strict';
 
-// Real loopback HTTP proof for the still-unmerged, stacked bridge branch.
+// Exercise keyed writes against an authenticated server and a loopback webhook.
 // This test never contacts an external Notion or UNOVA endpoint.
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
+const { randomBytes } = require('node:crypto');
 const { once } = require('node:events');
 
 async function freePort() {
@@ -17,6 +18,8 @@ async function freePort() {
 
 async function main() {
   const port = await freePort();
+  const apiKey = randomBytes(32).toString('hex');
+  const auth = { Authorization: `Bearer ${apiKey}` };
   const receiverPort = await freePort();
   const deliveries = [];
   const receiver = http.createServer(async (req, res) => {
@@ -35,8 +38,16 @@ async function main() {
   const server = spawn(process.execPath, ['index.js'], {
     cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'],
     env: {
-      ...process.env, PORT: String(port), UNOVA_WEBHOOK_URL: webhook,
-      UNOVA_API_KEY: 'ci-test-key', NOTION_TOKEN: '', NOTION_DATABASE_ID: ''
+      ...process.env,
+      PORT: String(port),
+      NOVA_MEMORY_HOST: '127.0.0.1',
+      NOVA_MEMORY_API_KEY: apiKey,
+      NO_PROXY: '127.0.0.1,localhost',
+      no_proxy: '127.0.0.1,localhost',
+      UNOVA_WEBHOOK_URL: webhook,
+      UNOVA_API_KEY: 'ci-test-key',
+      NOTION_TOKEN: '',
+      NOTION_DATABASE_ID: ''
     }
   });
   let log = '';
@@ -47,7 +58,7 @@ async function main() {
   const body = { userId: 'ci-retry-test', entryType: 'memory', topic: 'one', value: 'saved' };
   const write = (key, payload = body) => fetch(base + '/bridge/entry', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
+    headers: { ...auth, 'Content-Type': 'application/json', 'Idempotency-Key': key },
     body: JSON.stringify(payload)
   });
   try {
@@ -85,7 +96,7 @@ async function main() {
     assert.deepEqual(await c1.json(), await c2.json());
     assert.equal(deliveries.length, 2, 'concurrent requests must send once');
 
-    const records = await (await fetch(base + '/memory?userId=ci-retry-test')).json();
+    const records = await (await fetch(base + '/memory?userId=ci-retry-test', { headers: auth })).json();
     assert.deepEqual(records.map(x => x.topic), ['one', 'concurrent']);
     assert.equal(deliveries[0].method, 'POST');
     assert.equal(deliveries[0].url, '/test-webhook');

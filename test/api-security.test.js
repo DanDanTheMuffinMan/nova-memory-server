@@ -30,7 +30,7 @@ function invokeSocket(guard, handshake = {}) {
 }
 
 test('missing secret blocks memory, journal, keyboard, screen and uploads', () => {
-  const guard = createApiSecurity(undefined);
+  const guard = createApiSecurity(null);
   assert.equal(guard.configured, false);
   for (const path of ['/memory', '/journal', '/control/keyboard/type', '/capture/screen', '/upload/image']) {
     const result = invokeHttp(guard, { path });
@@ -40,7 +40,7 @@ test('missing secret blocks memory, journal, keyboard, screen and uploads', () =
 });
 
 test('only GET landing and OpenAPI metadata remain public', () => {
-  const guard = createApiSecurity(undefined);
+  const guard = createApiSecurity(null);
   for (const path of ['/', '/openapi.json']) {
     assert.equal(invokeHttp(guard, { path }).nextCalled, true);
     assert.equal(invokeHttp(guard, { path, method: 'POST' }).nextCalled, false);
@@ -60,6 +60,18 @@ test('valid bearer token permits protected REST action', () => {
   assert.equal(result.nextCalled, true);
 });
 
+test('REST and Socket.IO headers accept scheme casing and spaces while preserving key case', () => {
+  const guard = createApiSecurity(SECRET);
+  for (const header of ['bearer ' + SECRET, 'BEaReR   ' + SECRET]) {
+    assert.equal(invokeHttp(guard, { authorization: header }).nextCalled, true);
+    assert.equal(invokeSocket(guard, { headers: { authorization: header } }).error, null);
+  }
+  for (const header of ['bearer ' + SECRET.toUpperCase(), 'Bearer\t' + SECRET]) {
+    assert.equal(invokeHttp(guard, { authorization: header }).status, 401);
+    assert.match(invokeSocket(guard, { headers: { authorization: header } }).error.message, /Unauthorized/);
+  }
+});
+
 test('incorrect, missing, and malformed bearer tokens are rejected', () => {
   const guard = createApiSecurity(SECRET);
   for (const authorization of [undefined, '', 'Bearer wrong', SECRET, 'Basic ' + SECRET, 'Bearer ' + SECRET + ' extra']) {
@@ -71,7 +83,7 @@ test('incorrect, missing, and malformed bearer tokens are rejected', () => {
 });
 
 test('Socket.IO refuses connection when API key is missing', () => {
-  const result = invokeSocket(createApiSecurity(undefined), { auth: { token: SECRET } });
+  const result = invokeSocket(createApiSecurity(null), { auth: { token: SECRET } });
   assert.equal(result.called, true);
   assert.match(result.error.message, /not configured/);
 });

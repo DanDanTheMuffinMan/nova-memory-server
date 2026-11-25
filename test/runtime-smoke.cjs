@@ -3,20 +3,28 @@
 // Real loopback HTTP/Socket.IO parity checks against the composed draft code.
 // This contacts only a local UNOVA webhook stub; never external Notion/UNOVA or personal Macs.
 const assert = require('node:assert/strict');
-const { spawn } = require('node:child_process');
-const { randomInt } = require('node:crypto');
+const { execFile, spawn } = require('node:child_process');
+const { randomBytes, randomInt } = require('node:crypto');
 const { once } = require('node:events');
 const http = require('node:http');
+const { promisify } = require('node:util');
+const runClient = promisify(execFile);
 const { io } = require('socket.io-client');
 
 const port = randomInt(34000, 48000);
 const webhookPort = randomInt(48001, 61000);
 const webhookUrl = 'http://127.0.0.1:' + webhookPort + '/ci-unova-webhook';
-const webhookKey = 'ci-loopback-unova-key-not-a-real-secret';
+const webhookKey = randomBytes(32).toString('hex');
 const base = 'http://127.0.0.1:' + port;
-const secret = 'ci-local-only-memory-api-key-0123456789abcdef';
+const secret = randomBytes(32).toString('hex');
 const user = 'ci-runtime-smoke';
-const env = { ...process.env, PORT: String(port), NOVA_MEMORY_API_KEY: secret };
+const env = {
+  ...process.env,
+  PORT: String(port),
+  NOVA_MEMORY_HOST: '127.0.0.1',
+  NOVA_MEMORY_API_KEY: secret,
+  NOVA_MEMORY_PUBLIC_ORIGIN: 'https://nova-staging.example.invalid'
+};
 delete env.DISPLAY;
 delete env.NOTION_TOKEN;
 // Configure only a local loopback UNOVA receiver; never contact real integrations.
@@ -107,6 +115,17 @@ async function main() {
     });
     await waitForReady();
     const spec = await (await request('/openapi.json')).json();
+    assert.deepEqual(spec.servers, [{ url: env.NOVA_MEMORY_PUBLIC_ORIGIN }]);
+    const cli = await runClient(process.execPath, ['test-client.js'], { env, timeout: 15000 });
+    assert.match(cli.stdout, /Authenticated REST and Socket.IO admission passed/);
+    await assert.rejects(
+      runClient(process.execPath, ['test-client.js'], {
+        env: { ...env, NOVA_MEMORY_API_KEY: randomBytes(32).toString('hex') },
+        timeout: 15000
+      }),
+      error => error.code === 1 && /401/.test(error.stderr)
+    );
+    console.log('PASS: bundled client authenticated over REST and Socket.IO and rejected the wrong bearer');
     check(spec.security?.[0]?.bearerAuth, 'OpenAPI bearer auth missing');
     await request('/memory?userId=' + user, {}, 401);
     await request('/memory?userId=' + user, { headers: { Authorization: 'Bearer wrong' } }, 401);

@@ -4,6 +4,8 @@ This guide shows you how to connect your Custom GPT to the Nova Memory Server, e
 
 ## Prerequisites
 
+Set `NOVA_MEMORY_API_KEY` to a dedicated random token of at least 32 UTF-8 bytes in the server environment. Load the same value privately into each trusted client. `UNOVA_API_KEY` belongs to the outbound webhook.
+
 1. **Nova Memory Server running on your machine:**
    ```bash
    npm install
@@ -42,6 +44,7 @@ Since Custom GPTs run on OpenAI's servers and cannot access `localhost` directly
    - Click "Import from URL"
    - Paste: `https://YOUR-NGROK-URL.ngrok.io/openapi.json`
    - Click "Import"
+   - In the Action’s authentication settings choose **API Key → Bearer** and enter the server’s `NOVA_MEMORY_API_KEY` in the credential field. Keep the key out of the schema, instructions, and chat. Verify that `servers[0].url` is the HTTPS origin you control before testing.
 
 ### Using Cloudflare Tunnel (Alternative)
 
@@ -79,9 +82,9 @@ Since Custom GPTs run on OpenAI's servers and cannot access `localhost` directly
 
 3. **Follow step 5** above with the provided URL
 
-## Option 2: Manual Schema Import (Works Without Internet)
+## Option 2: Manual Schema Import
 
-If you don't want to use a tunnel or expose your server, you can manually paste the OpenAPI schema:
+You can generate the schema offline. Running an Action requires a reachable HTTPS server.
 
 1. **Generate the schema file:**
    ```bash
@@ -99,7 +102,8 @@ If you don't want to use a tunnel or expose your server, you can manually paste 
 4. **Update the server URL:**
    - In the schema editor, find the `servers` section
    - If using a tunnel, replace `http://localhost:3000` with your tunnel URL
-   - If not using a tunnel, you'll need to manually update this each time you create a new tunnel
+   - For Actions calls, use a reachable HTTPS origin and update it whenever the tunnel changes.
+   - In the Action’s authentication settings choose **API Key → Bearer** and enter the server’s `NOVA_MEMORY_API_KEY` in the credential field. Keep the key out of the schema, instructions, and chat. Verify that `servers[0].url` is the HTTPS origin you control before testing.
 
 ## Option 3: Deploy to a Cloud Server
 
@@ -122,7 +126,7 @@ git push heroku main
 Deploy as you would any Node.js Express application.
 
 ⚠️ **Security Warning:** When deploying publicly:
-- Add authentication (JWT, API keys)
+- Configure `NOVA_MEMORY_API_KEY` before starting the server
 - Use HTTPS only
 - Restrict peripheral control endpoints to trusted IPs
 - Consider rate limiting
@@ -212,7 +216,8 @@ Move my mouse to coordinates (500, 500)
 1. Check that Nova Memory Server is running (`npm start`)
 2. If using a tunnel, ensure it's still active (tunnels can timeout)
 3. Verify the server URL in the Actions schema matches your tunnel URL
-4. Check firewall settings
+4. A protected request returning 401 means the bearer credential was missing or incorrect. A response naming an unconfigured `NOVA_MEMORY_API_KEY` means the server process needs its key.
+5. Check firewall settings
 
 ### "Peripheral control not available"
 
@@ -299,11 +304,10 @@ Here's a complete workflow to get started:
    - Go to Actions → Import from URL
    - Paste: `https://abc123.ngrok.io/openapi.json`
    - Click Import
+   - In the Action’s authentication settings choose **API Key → Bearer** and enter the server’s `NOVA_MEMORY_API_KEY` in the credential field. Keep the key out of the schema, instructions, and chat. Verify that `servers[0].url` is the HTTPS origin you control before testing.
 
 5. **Test it:**
-   - "Take a screenshot"
-   - "Remember that I work in software engineering"
-   - "Add a journal entry: Today was productive"
+   - "Check the Notion configuration status." This protected read exercises the Action credential even if Notion is unconfigured.
 
 6. **Use it:**
    - Ask Nova to help with computer tasks

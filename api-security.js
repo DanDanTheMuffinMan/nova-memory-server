@@ -8,7 +8,8 @@ const PUBLIC_GET_PATHS = new Set(['/', '/openapi.json']);
 
 function bearerToken(header) {
   if (typeof header !== 'string') return null;
-  const match = /^Bearer ([^\s]+)$/.exec(header);
+  // HTTP auth schemes are case-insensitive (RFC 9110 §11.1); Bearer uses 1*SP (RFC 6750 §2.1).
+  const match = /^Bearer +([^\s]+)$/i.exec(header);
   return match ? match[1] : null;
 }
 

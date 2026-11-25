@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
+const { randomBytes } = require('node:crypto');
 const { createServer } = require('node:net');
 const { once } = require('node:events');
 const path = require('node:path');
@@ -16,12 +17,16 @@ async function freePort() {
 
 async function main() {
   const port = await freePort();
+  const apiKey = randomBytes(32).toString('hex');
+  const auth = { Authorization: `Bearer ${apiKey}` };
   const base = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, [path.resolve(__dirname, '../index.js')], {
     cwd: path.resolve(__dirname, '..'),
     env: {
       ...process.env,
       PORT: String(port),
+      NOVA_MEMORY_HOST: '127.0.0.1',
+      NOVA_MEMORY_API_KEY: apiKey,
       DISPLAY: '',
       NOTION_TOKEN: '',
       NOTION_DATABASE_ID: '',
@@ -48,7 +53,7 @@ async function main() {
 
     const jsonPost = (endpoint, body) => fetch(base + endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...auth, 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     const memory = { userId: 'alpha,beta', topic: 'only-string', value: 'first' };
@@ -73,7 +78,7 @@ async function main() {
     }
 
     async function getJSON(endpoint) {
-      const response = await fetch(base + endpoint);
+      const response = await fetch(base + endpoint, { headers: auth });
       return { status: response.status, data: await response.json() };
     }
     const validMemory = await getJSON('/memory?userId=alpha%2Cbeta');
@@ -96,7 +101,7 @@ async function main() {
     form.append('userId', 'alpha');
     form.append('userId', 'beta');
     form.append('image', new Blob(['data'], { type: 'image/png' }), 'demo.png');
-    const mediaResponse = await fetch(base + '/upload/image', { method: 'POST', body: form });
+    const mediaResponse = await fetch(base + '/upload/image', { method: 'POST', headers: auth, body: form });
     assert.equal(mediaResponse.status, 400, 'multiple userId form fields must not alias a string ID');
     const media = await getJSON('/media?userId=alpha%2Cbeta');
     assert.equal(media.status, 200);

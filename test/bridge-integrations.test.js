@@ -165,3 +165,61 @@ test('exact configured URL is allowed without changing server bearer token', asy
   assert.equal(calls[0][1].event, 'nova.test');
   assert.equal(calls[0][2].headers.Authorization, 'Bearer server-key');
 });
+
+test('Notion bridge routes entries to configured per-type databases and preserves explicit overrides', async () => {
+  const destinations = [];
+  const { createNotionEntry } = createBridgeIntegrations({
+    env: {
+      NOTION_TOKEN: 'test-token',
+      NOTION_MEMORY_DATABASE_ID: 'memory-db',
+      NOTION_JOURNAL_DATABASE_ID: 'journal-db',
+      NOTION_DATABASE_ID: 'shared-db'
+    },
+    post: async (url, body) => {
+      destinations.push(body.parent.database_id);
+      return { data: { id: 'page' } };
+    }
+  });
+  for (const entryType of ['memory', 'journal']) {
+    assert.equal((await createNotionEntry({ ...record, entryType })).success, true);
+  }
+  await createNotionEntry({ ...record, overrides: { databaseId: 'custom-db' } });
+  assert.deepEqual(destinations, ['memory-db', 'journal-db', 'custom-db']);
+
+  const journalOnly = createBridgeIntegrations({
+    env: { NOTION_TOKEN: 'test-token', NOTION_JOURNAL_DATABASE_ID: 'journal-db' },
+    post: async (url, body) => ({ data: { id: body.parent.database_id } })
+  });
+  const journal = await journalOnly.createNotionEntry({ ...record, entryType: 'journal' });
+  assert.equal(journal.pageId, 'journal-db');
+  assert.deepEqual(await journalOnly.createNotionEntry(record), { enabled: false });
+});
+
+test('stalled deliveries settle with an unknown remote outcome and abort both transports',
+  { timeout: 2000 }, async () => {
+    const signals = [];
+    const bridge = createBridgeIntegrations({
+      env: {
+        NOTION_TOKEN: 'test-token',
+        NOTION_DATABASE_ID: 'test-db',
+        UNOVA_WEBHOOK_URL: 'https://example.invalid/hook'
+      },
+      deliveryTimeoutMs: 10,
+      post: (url, body, { signal }) => {
+        signals.push(signal);
+        return new Promise(() => {});
+      }
+    });
+
+    const results = await Promise.all([
+      bridge.createNotionEntry(record),
+      bridge.sendUnovaEvent({ payload: record })
+    ]);
+    for (const result of results) {
+      assert.deepEqual(result, {
+        enabled: true, success: false, error: 'Bridge delivery timed out; remote outcome unknown'
+      });
+    }
+    assert.equal(signals.length, 2);
+    assert.ok(signals.every(signal => signal.aborted));
+  });

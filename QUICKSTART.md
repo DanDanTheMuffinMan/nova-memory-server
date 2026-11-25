@@ -4,6 +4,8 @@ Get started with Nova Memory Server in 5 minutes!
 
 ## Installation
 
+Set `NOVA_MEMORY_API_KEY` to a dedicated random token of at least 32 UTF-8 bytes in the server environment. Load the same value privately into each trusted client. `UNOVA_API_KEY` belongs to the outbound webhook.
+
 ```bash
 # Clone the repository
 git clone https://github.com/DanDanTheMuffinMan/nova-memory-server.git
@@ -25,46 +27,56 @@ Peripheral control: enabled (or disabled if no display)
 
 ## Test It Out
 
+With the server running, `node test-client.js` checks authenticated read-only HTTP and Socket.IO admission. Run the following examples only when you intend to create test data or exercise the indicated peripheral.
+
+In the client shell, define this helper to pass the bearer header through standard input.
+
+```bash
+nova_curl() {
+  printf 'Authorization: Bearer %s\n' "${NOVA_MEMORY_API_KEY:?set the client credential}" | curl --header @- "$@"
+}
+```
+
 ### 1. Test Basic Endpoints
 
 ```bash
 # Store a memory
-curl -X POST http://localhost:3000/memory \
+nova_curl -X POST http://localhost:3000/memory \
   -H "Content-Type: application/json" \
   -d '{"userId":"test","topic":"demo","value":"This works!"}'
 
 # Retrieve memories
-curl http://localhost:3000/memory?userId=test
+nova_curl "http://localhost:3000/memory?userId=test"
 
 # Store a journal entry
-curl -X POST http://localhost:3000/journal \
+nova_curl -X POST http://localhost:3000/journal \
   -H "Content-Type: application/json" \
   -d '{"userId":"test","title":"First Entry","content":"Hello World!"}'
 
 # Retrieve journal entries
-curl http://localhost:3000/journal?userId=test
+nova_curl "http://localhost:3000/journal?userId=test"
 ```
 
 ### 2. Test Peripheral Control (requires display)
 
 ```bash
 # Type text
-curl -X POST http://localhost:3000/control/keyboard/type \
+nova_curl -X POST http://localhost:3000/control/keyboard/type \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello from API!"}'
 
 # Move mouse
-curl -X POST http://localhost:3000/control/mouse/move \
+nova_curl -X POST http://localhost:3000/control/mouse/move \
   -H "Content-Type: application/json" \
   -d '{"x":500,"y":300}'
 
 # Click mouse
-curl -X POST http://localhost:3000/control/mouse/click \
+nova_curl -X POST http://localhost:3000/control/mouse/click \
   -H "Content-Type: application/json" \
   -d '{"button":"left"}'
 
 # Capture screenshot
-curl http://localhost:3000/capture/screen?format=png > screenshot.png
+nova_curl "http://localhost:3000/capture/screen?format=png" > screenshot.png
 ```
 
 ### 3. Test WebSocket Streaming
@@ -73,7 +85,7 @@ Create a file `test-stream.js`:
 
 ```javascript
 const io = require('socket.io-client');
-const socket = io('http://localhost:3000');
+const socket = io('http://localhost:3000', { auth: { token: process.env.NOVA_MEMORY_API_KEY } });
 
 socket.on('connect', () => {
   console.log('Connected! Starting screen stream...');
@@ -107,14 +119,14 @@ node test-stream.js
 
 ```bash
 # Upload an image
-curl -X POST http://localhost:3000/upload/image \
+nova_curl -X POST http://localhost:3000/upload/image \
   -F "image=@/path/to/your/image.jpg" \
   -F "userId=test" \
   -F "source=camera" \
   -F "description=Test image"
 
 # List uploaded media
-curl http://localhost:3000/media?userId=test
+nova_curl "http://localhost:3000/media?userId=test"
 ```
 
 ## Using with Custom GPT
@@ -137,9 +149,11 @@ Then import from your tunnel URL: `https://YOUR-TUNNEL-URL/openapi.json`
 
 ### Option 2: Export and Paste Schema
 ```bash
-node export-openapi.js
-# Copy contents of openapi.json and paste into Custom GPT Actions
+node export-openapi.js https://your-verified-tunnel.example
+# Replace the example URL with your actual HTTPS origin, then copy contents of openapi.json and paste into Custom GPT Actions
 ```
+
+In the Action’s authentication settings choose **API Key → Bearer** and enter the server’s `NOVA_MEMORY_API_KEY` in the credential field. Keep the key out of the schema, instructions, and chat. Verify that `servers[0].url` is the HTTPS origin you control before testing.
 
 ### Security Note
 The API can grant an AI full keyboard/mouse control and screen capture. Only use with tunnel services you trust, keep logs monitored, and understand the risks. See [CUSTOM_GPT_SETUP.md](CUSTOM_GPT_SETUP.md) for detailed security guidelines.
@@ -151,13 +165,16 @@ See [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) for detailed patterns and examp
 ### Simple Agent Example
 
 ```javascript
-const axios = require('axios');
+const nova = require('axios').create({
+  headers: { Authorization: `Bearer ${process.env.NOVA_MEMORY_API_KEY}` },
+  maxRedirects: 0
+});
 const io = require('socket.io-client');
 
 class SimpleAgent {
   constructor() {
     this.baseUrl = 'http://localhost:3000';
-    this.socket = io(this.baseUrl);
+    this.socket = io(this.baseUrl, { auth: { token: process.env.NOVA_MEMORY_API_KEY } });
   }
 
   async start() {
@@ -179,11 +196,11 @@ class SimpleAgent {
 
   async executeAction(action) {
     if (action.type === 'click') {
-      await axios.post(`${this.baseUrl}/control/mouse/move`, {
+      await nova.post(`${this.baseUrl}/control/mouse/move`, {
         x: action.x,
         y: action.y
       });
-      await axios.post(`${this.baseUrl}/control/mouse/click`, {
+      await nova.post(`${this.baseUrl}/control/mouse/click`, {
         button: 'left'
       });
     }
@@ -218,7 +235,7 @@ socket.emit('start-screen-stream', { fps: 1 }); // Lower FPS
 - ✅ Read [README.md](README.md) for complete API documentation
 - ✅ Check [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) for advanced patterns
 - ✅ Review [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for technical details
-- ✅ Run `node test-client.js` to see all features in action
+- ✅ Run `node test-client.js` to verify authenticated HTTP and Socket.IO admission
 
 ## Need Help?
 

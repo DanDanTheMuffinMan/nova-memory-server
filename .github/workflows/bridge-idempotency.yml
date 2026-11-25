@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'bridge-idempotency.js'
+      - 'bridge-integrations.js'
+      - 'api-security.js'
       - 'index.js'
       - 'test/bridge-idempotency.test.js'
       - 'test/bridge-idempotency-http.cjs'
@@ -11,8 +13,11 @@ on:
   push:
     paths:
       - 'bridge-idempotency.js'
+      - 'bridge-integrations.js'
+      - 'api-security.js'
       - 'index.js'
       - 'test/bridge-idempotency.test.js'
+      - 'test/bridge-idempotency-http.cjs'
       - 'test/bridge-integrations.test.js'
       - '.github/workflows/bridge-idempotency.yml'
 

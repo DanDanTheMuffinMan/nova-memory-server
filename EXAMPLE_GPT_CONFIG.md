@@ -136,6 +136,8 @@ No additional files needed - Nova uses its actions to interface with your comput
 
 ## Actions
 
+Set `NOVA_MEMORY_API_KEY` to a dedicated random token of at least 32 UTF-8 bytes in the server environment. Load the same value privately into each trusted client. `UNOVA_API_KEY` belongs to the outbound webhook.
+
 Import the OpenAPI schema from your Nova Memory Server:
 
 ### If using a tunnel (ngrok/cloudflare):
@@ -145,9 +147,11 @@ Import the OpenAPI schema from your Nova Memory Server:
 4. In Actions tab: **Import from URL** → `https://your-tunnel-url.ngrok.io/openapi.json`
 
 ### If pasting manually:
-1. Run: `npm run export-schema`
+1. Run `npm run export-schema -- https://your-verified-tunnel.example` with your server’s actual HTTPS origin.
 2. Copy contents of `openapi.json`
 3. In Actions tab: Paste the schema directly
+
+In the Action’s authentication settings choose **API Key → Bearer** and enter the server’s `NOVA_MEMORY_API_KEY` in the credential field. Keep the key out of the schema, instructions, and chat. Verify that `servers[0].url` is the HTTPS origin you control before testing.
 
 ## Capabilities Settings
 
@@ -207,7 +211,7 @@ Add a journal entry: Today I configured Nova and it works great!
 - Verify server is running (`npm start`)
 - Check tunnel is active (ngrok/cloudflare)
 - Ensure URL in schema matches your tunnel URL
-- Check server logs for requests
+- A 401 on a protected endpoint means the bearer credential was missing or incorrect. An unconfigured-key response means the server needs its inbound key.
 
 ### Peripheral Control Unavailable
 - Server needs a display (not headless)
@@ -276,7 +280,7 @@ The user analyzes data. When helping:
 2. ✅ Configure the Custom GPT (this file)
 3. ✅ Test basic functionality
 4. ✅ Customize instructions for your needs
-5. ✅ Share with team (if appropriate)
+5. ✅ Restrict GPT access to people authorized to use this server’s memory and control operations
 6. ✅ Enjoy your AI computer assistant!
 
 ## Resources
