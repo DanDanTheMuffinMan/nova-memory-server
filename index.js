@@ -101,7 +101,12 @@ const notionConfig = {
   userIdProperty: process.env.NOTION_USER_ID_PROPERTY || 'UserId',
   createdAtProperty: process.env.NOTION_CREATED_AT_PROPERTY || 'CreatedAt'
 };
-const notion = notionConfig.token ? new NotionClient({ auth: notionConfig.token }) : null;
+// The SDK's diagnostic logger can include upstream error messages and bodies.
+const notion = notionConfig.token ? new NotionClient({
+  auth: notionConfig.token,
+  logger: () => {}
+}) : null;
+const NOTION_WRITE_FAILURE = 'Notion delivery failed; remote outcome unknown';
 
 const canSyncToNotion = (type) => {
   if (!notion) return false;
@@ -205,7 +210,7 @@ const syncEntryToNotion = async (type, payload) => {
     const pageId = await createNotionPage({ databaseId, properties });
     return { synced: true, pageId };
   } catch (error) {
-    return { synced: false, error: error.message };
+    return { synced: false, error: NOTION_WRITE_FAILURE };
   }
 };
 
@@ -236,8 +241,8 @@ app.post('/memory', async (req, res) => {
       }
       response.notion = notionResult;
     } catch (error) {
-      console.error('Exception while syncing memory entry to Notion:', error.message);
-      response.notion = { synced: false, error: error.message };
+      console.error('Exception while syncing memory entry to Notion:', NOTION_WRITE_FAILURE);
+      response.notion = { synced: false, error: NOTION_WRITE_FAILURE };
     }
   }
   res.json(response);
@@ -268,8 +273,8 @@ app.post('/journal', async (req, res) => {
       }
       response.notion = notionResult;
     } catch (error) {
-      console.error('Exception while syncing journal entry to Notion:', error.message);
-      response.notion = { synced: false, error: error.message };
+      console.error('Exception while syncing journal entry to Notion:', NOTION_WRITE_FAILURE);
+      response.notion = { synced: false, error: NOTION_WRITE_FAILURE };
     }
   }
   res.json(response);
@@ -306,7 +311,7 @@ app.post('/notion/memory', async (req, res) => {
     const pageId = await createNotionPage({ databaseId: notionConfig.memoryDatabaseId, properties });
     res.json({ success: true, pageId });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: NOTION_WRITE_FAILURE });
   }
 });
 
@@ -324,7 +329,7 @@ app.post('/notion/journal', async (req, res) => {
     const pageId = await createNotionPage({ databaseId: notionConfig.journalDatabaseId, properties });
     res.json({ success: true, pageId });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: NOTION_WRITE_FAILURE });
   }
 });
 

@@ -19,7 +19,7 @@ test('authenticated journal bridge uses its Notion database and replays one deli
       '--require', require.resolve('./fixtures/offline-notion-adapter.cjs'),
       require.resolve('../index.js')
     ], {
-      stdio: ['ignore', 'pipe', 'inherit'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         PATH: process.env.PATH,
         PORT: '0',
@@ -31,6 +31,9 @@ test('authenticated journal bridge uses its Notion database and replays one deli
         TEST_NOTION_RECEIPT: receipt
       }
     });
+    let stderr = '';
+    server.stderr.setEncoding('utf8');
+    server.stderr.on('data', chunk => { stderr += chunk; });
     const exited = once(server, 'exit');
     t.after(async () => {
       try {
@@ -107,4 +110,39 @@ test('authenticated journal bridge uses its Notion database and replays one deli
     }
     assert.equal((await readFile(receipt, 'utf8')).trim().split('\n').length, 1,
       'rejected overrides must not produce any additional serialized requests');
+
+    const legacyPost = async (route, body) => {
+      const response = await fetch(base + route, {
+        method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(5000)
+      });
+      const raw = await response.text();
+      assert.doesNotMatch(raw, /offline-notion-token|synthetic-reflected-private-body/);
+      return { status: response.status, body: JSON.parse(raw) };
+    };
+    const failure = 'Notion delivery failed; remote outcome unknown';
+    const memory = { userId: 'legacy-test', topic: 'legacy-failure', value: 'synthetic memory' };
+    const note = { userId: 'legacy-test', title: 'legacy-failure', content: 'synthetic journal' };
+    assert.deepEqual(await legacyPost('/notion/memory', memory), { status: 500, body: { error: failure } });
+    assert.deepEqual(await legacyPost('/notion/journal', note), { status: 500, body: { error: failure } });
+    for (const [route, payload] of [['/memory', memory], ['/journal', note]]) {
+      assert.deepEqual(await legacyPost(route, { ...payload, syncToNotion: true }),
+        { status: 200, body: { success: true, notion: { synced: false, error: failure } } });
+      const local = await fetch(base + route + '?userId=legacy-test', { headers: auth, signal: AbortSignal.timeout(5000) });
+      assert.equal(local.status, 200);
+      assert.equal((await local.json()).length, 1, 'local write survives failed remote delivery');
+    }
+    assert.deepEqual(await legacyPost('/notion/memory', { ...memory, topic: 'legacy-success' }),
+      { status: 200, body: { success: true, pageId: 'legacy-offline-page' } });
+    assert.deepEqual(await legacyPost('/notion/journal', { ...note, title: 'legacy-success' }),
+      { status: 200, body: { success: true, pageId: 'legacy-offline-page' } });
+    const all = (await readFile(receipt, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    assert.equal(all.length, 7);
+    assert.deepEqual(all.slice(1).map(call => [call.legacy, call.databaseId, call.hasFixtureCredential]),
+      ['offline-memory', 'offline-journal', 'offline-memory', 'offline-journal', 'offline-memory', 'offline-journal']
+        .map(databaseId => [true, databaseId, true]));
+    server.kill('SIGTERM');
+    await exited;
+    assert.doesNotMatch(stderr, /offline-notion-token|synthetic-reflected-private-body/);
+    console.log('PASS: all four legacy Notion failure responses and SDK diagnostics withheld reflected private content; local writes and success paths preserved');
   });

@@ -28,3 +28,25 @@ axios.defaults.adapter = async config => {
   }
   return { status: 200, data: { id: 'offline-page' }, headers: {}, config };
 };
+
+ // Legacy SDK fixture: the bridge uses Axios, while four legacy routes use
+ // @notionhq/client. Intercept that module only in this disposable child.
+const Module = require('node:module');
+const originalLoad = Module._load;
+Module._load = function (name, ...args) {
+  if (name !== '@notionhq/client') return originalLoad.call(this, name, ...args);
+  return { Client: class {
+    constructor(options) {
+      this.pages = { create: async body => {
+        const title = body.properties.Name.title[0].text.content;
+        record({ legacy: true, databaseId: body.parent.database_id,
+          hasFixtureCredential: options.auth === 'offline-notion-token' });
+        if (title === 'legacy-success') return { id: 'legacy-offline-page' };
+        const message = 'synthetic-reflected-private-body ' + options.auth;
+        const logger = options.logger || ((...values) => console.error(...values));
+        logger('warn', message, { body: message });
+        throw new Error(message);
+      }};
+    }
+  }};
+};
