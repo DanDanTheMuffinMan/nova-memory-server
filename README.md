@@ -15,7 +15,21 @@ Before `npm start`, set a dedicated, random `NOVA_MEMORY_API_KEY` of **at least 
 - Use HTTPS for tunnels and rotate the secret if compromised. A successful connection or API response does not prove the key is safe from exposure in client logs.
 - Run `npm test` to exercise the REST and Socket.IO authorization gates before deployment.
 
+For staging on one machine, set `NOVA_MEMORY_HOST=127.0.0.1`. For a TLS-terminating tunnel or reverse proxy, set `NOVA_MEMORY_PUBLIC_ORIGIN` to the operator-controlled HTTPS origin, such as `https://nova-staging.example.org`. The live Actions schema will advertise that origin.
+
 **Rollout condition:** Configure the server secret and each existing HTTP/Socket.IO client first. Otherwise, adopting this security patch will intentionally disable those operations until configured. This draft does not deploy or rotate credentials.
+
+### Read-only external staging acceptance gate
+
+On the explicitly designated nonproduction server only, set `NOVA_STAGING_BUILD_SHA` to the exact deployed full Git commit SHA. On Render this must equal the platform's `RENDER_GIT_COMMIT` when present; a mismatch fails startup. Do not set this marker in production. It is a public, operator-declared build identity, not cryptographic attestation. From the reviewed candidate checkout, set `NOVA_STAGING_ORIGIN` to that HTTPS origin, `NOVA_STAGING_EXPECTED_SHA` to the full reviewed commit SHA (for example `git rev-parse HEAD`), and load the separate `NOVA_MEMORY_API_KEY` from a private secret store. Run:
+
+```bash
+node check-staging.js
+```
+
+For the dedicated Render authentication-only launcher, run `NOVA_STAGING_AUTH_ONLY=1 node check-staging.js` instead. Import the staging service's live `/openapi.json` into a separate test GPT: it advertises only the bearer-protected `getNotionStatus` operation. The strict gate rejects a broader schema before sending bearer credentials and fails if any Notion configuration flag is true. The normal schema and normal gate remain available for separately authorized integration rehearsals.
+
+Before sending any bearer, the gate requires the server's explicit staging build marker to match the reviewed commit. It then checks the public schema's exact origin and bearer contract, anonymous and wrong-key rejection, and authenticated Notion configuration status. It never follows redirects, writes entries, performs capture, sends a webhook, or prints credentials or response bodies. The known Render production hostname is rejected. A pass is not evidence of live GPT Action credential binding, external delivery, or Mac permissions; those require separate authorized verification.
 
 ## 🚀 Quick Start with Custom GPT
 
@@ -29,25 +43,25 @@ Give the following message to your coding agent (Codex/ChatGPT) so it follows th
 ```
 You are my setup agent for the nova-memory-server project. Execute every step exactly as written in README.md:
 1) Run `npm install` in the repository root.
-2) Start the server with `npm start`.
+2) Configure NOVA_MEMORY_API_KEY privately on the server, then start it with `npm start`.
 3) If external access is needed, open an HTTPS tunnel to port 3000 (e.g., `ngrok http 3000`) and capture the HTTPS base URL as {BASE_URL}.
 4a) If you have a tunnel, import the OpenAPI schema from {BASE_URL}/openapi.json (or run `node export-openapi.js {BASE_URL}` to embed it, then import).
 4b) If you do not have a tunnel yet, run `node export-openapi.js`, then set `servers[0].url` in the exported JSON to your HTTPS tunnel before importing.
-5) Ask me for any missing values—specifically the tunnel {BASE_URL}, Notion tokens/DB IDs, and UNOVA webhook/API settings—rather than inventing them.
+5) Configure API Key → Bearer in the private Actions credential field. Verify servers[0].url matches the intended HTTPS origin. Keep credentials in the server environment or credential manager.
 6) Confirm completion by reporting the server status and the base URL used, then provide a short example prompt (e.g., “Store this in memory: my Wi-Fi is NovaNet”).
 ```
 
 Quick overview:
 1. `npm install && npm start` - Start the server
 2. `ngrok http 3000` - Expose to the internet (or use the export script)
-3. Import the OpenAPI schema into your Custom GPT Actions
+3. Import the OpenAPI schema into your Custom GPT Actions and configure API Key → Bearer
 4. Start chatting with an AI that can see and control your computer!
 
 ### 🔌 Reconnect your Nova Custom GPT (quick steps)
 1. Start the server: `npm start`
 2. Open a tunnel: `ngrok http 3000` (or any HTTPS tunnel) and copy the HTTPS URL
 3. In GPT Builder → Actions → **Import from URL**, paste your ngrok HTTPS URL with `/openapi.json` appended (for example, `https://abc123.ngrok-free.app/openapi.json`), then click **Import**
-4. Save the GPT and try a prompt like 'Store this in memory: my Wi-Fi is NovaNet'
+4. In Actions, configure **API Key → Bearer** and verify `servers[0].url` matches your HTTPS tunnel. Save the GPT and try a prompt like 'Store this in memory: my Wi-Fi is NovaNet'
 
 - **No tunnel?** Run `node export-openapi.js` to export the schema. Before pasting `openapi.json` into the Actions schema editor, update the `servers[0].url` to a reachable HTTPS URL (e.g., your tunnel). If you already have a tunnel, you can instead run `node export-openapi.js https://abc123.ngrok-free.app` and paste that JSON directly.
 
@@ -93,7 +107,7 @@ Quick overview:
 - `POST /bridge/entry` with `{ userId, entryType, ... }` - Store a memory/journal entry and sync to UNOVA + Notion
   - Memory payload: `{ entryType: "memory", topic, value }`
   - Journal payload: `{ entryType: "journal", title, content }`
-  - Optional: `tags`, `notion` overrides, `unova` overrides
+  - Optional: `tags`, Notion property/version overrides, and `unova.eventName`. The server owns both integrations' credentials and destinations. A legacy `notion.databaseId` is accepted only when it exactly matches the configured database for the entry type; request tokens and mismatched IDs are rejected without Notion delivery. The local entry remains stored; inspect `notion.success`. Delivery failures from either bridge transport expose a fixed error message and, when available, a numeric upstream HTTP status only. Raw upstream bodies and transport exceptions are never returned; a failed delivery does not establish whether the remote side committed it.
 
 ### Real-Time Streaming (WebSocket)
 Connect to WebSocket server at `ws://localhost:3000`
@@ -136,19 +150,27 @@ UNOVA_EVENT_NAME=nova.entry.created
 
 ## Usage Examples
 
+On the server host, `node test-client.js` checks authenticated REST and Socket.IO admission using `NOVA_MEMORY_API_KEY` and `PORT` (default 3000). The optional `--peripherals` demo writes test data, operates the keyboard and mouse, and captures the display.
+
+The following examples run in a trusted Node client with `NOVA_MEMORY_API_KEY` set in its environment. Initialize the HTTP headers once before running an HTTP example. Keep this key out of browser bundles and shared pages.
+
+```javascript
+const auth = { Authorization: 'Bearer ' + process.env.NOVA_MEMORY_API_KEY };
+```
+
 ### Keyboard Control
 ```javascript
 // Type text
 fetch('http://localhost:3000/control/keyboard/type', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: { ...auth, 'Content-Type': 'application/json' },
   body: JSON.stringify({ text: 'Hello, World!' })
 });
 
 // Press Ctrl+C
 fetch('http://localhost:3000/control/keyboard/key', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: { ...auth, 'Content-Type': 'application/json' },
   body: JSON.stringify({ key: 'c', modifiers: ['leftcontrol'] })
 });
 ```
@@ -158,14 +180,14 @@ fetch('http://localhost:3000/control/keyboard/key', {
 // Move cursor
 fetch('http://localhost:3000/control/mouse/move', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: { ...auth, 'Content-Type': 'application/json' },
   body: JSON.stringify({ x: 100, y: 200, smooth: true })
 });
 
 // Click
 fetch('http://localhost:3000/control/mouse/click', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: { ...auth, 'Content-Type': 'application/json' },
   body: JSON.stringify({ button: 'left', double: false })
 });
 ```
@@ -173,13 +195,13 @@ fetch('http://localhost:3000/control/mouse/click', {
 ### Screen Capture
 ```javascript
 // Get screenshot
-const response = await fetch('http://localhost:3000/capture/screen?format=png');
+const response = await fetch('http://localhost:3000/capture/screen?format=png', { headers: auth });
 const imageBlob = await response.blob();
 ```
 
 ### WebSocket Streaming
 ```javascript
-const socket = io('http://localhost:3000');
+const socket = io('http://localhost:3000', { auth: { token: process.env.NOVA_MEMORY_API_KEY } });
 
 socket.on('connect', () => {
   // Start streaming at 2 FPS
@@ -206,6 +228,7 @@ formData.append('description', 'Profile picture');
 
 fetch('http://localhost:3000/upload/image', {
   method: 'POST',
+  headers: auth,
   body: formData
 });
 ```

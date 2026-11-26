@@ -4,6 +4,8 @@ This guide explains how to integrate Nova Memory Server's peripheral control and
 
 ## Quick Start
 
+Set `NOVA_MEMORY_API_KEY` to a dedicated random token of at least 32 UTF-8 bytes in the server environment. Load the same value privately into each trusted client. `UNOVA_API_KEY` belongs to the outbound webhook. The Node.js examples below run in a trusted process with that environment and use an operator-configured server URL. Keep this privileged credential out of browser bundles.
+
 1. **Install dependencies:**
    ```bash
    npm install
@@ -39,70 +41,21 @@ This guide explains how to integrate Nova Memory Server's peripheral control and
 
 ### Pattern 1: Custom GPT with Actions
 
-Configure your Custom GPT with these action schemas:
-
-```yaml
-openapi: 3.0.0
-info:
-  title: Nova Memory Server API
-  version: 1.0.0
-servers:
-  - url: http://localhost:3000
-paths:
-  /control/keyboard/type:
-    post:
-      operationId: typeText
-      summary: Type text using keyboard
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                text:
-                  type: string
-                  description: Text to type
-              required: [text]
-  /control/mouse/move:
-    post:
-      operationId: moveMouse
-      summary: Move mouse cursor
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                x:
-                  type: integer
-                y:
-                  type: integer
-                smooth:
-                  type: boolean
-  /capture/screen:
-    get:
-      operationId: captureScreen
-      summary: Capture screenshot
-      parameters:
-        - name: format
-          in: query
-          schema:
-            type: string
-            enum: [png, jpg]
-```
+Import the live `/openapi.json` from your HTTPS origin, or run `node export-openapi.js https://your-verified-tunnel.example` with that origin and paste the resulting JSON. In the Action’s authentication settings choose **API Key → Bearer** and enter the server’s `NOVA_MEMORY_API_KEY` in the credential field. Keep the key out of the schema, instructions, and chat. Verify that `servers[0].url` is the HTTPS origin you control before testing.
 
 ### Pattern 2: AI Agent with Screen Monitoring
 
 ```javascript
 const io = require('socket.io-client');
-const axios = require('axios');
+const nova = require('axios').create({
+  headers: { Authorization: `Bearer ${process.env.NOVA_MEMORY_API_KEY}` },
+  maxRedirects: 0
+});
 
 class AIAgent {
   constructor(serverUrl = 'http://localhost:3000') {
     this.serverUrl = serverUrl;
-    this.socket = io(serverUrl);
+    this.socket = io(serverUrl, { auth: { token: process.env.NOVA_MEMORY_API_KEY } });
     this.setupScreenMonitoring();
   }
 
@@ -139,12 +92,12 @@ class AIAgent {
   async performAction(action) {
     switch(action.type) {
       case 'click':
-        await axios.post(`${this.serverUrl}/control/mouse/click`, {
+        await nova.post(`${this.serverUrl}/control/mouse/click`, {
           button: 'left'
         });
         break;
       case 'type':
-        await axios.post(`${this.serverUrl}/control/keyboard/type`, {
+        await nova.post(`${this.serverUrl}/control/keyboard/type`, {
           text: action.text
         });
         break;
@@ -164,7 +117,10 @@ const agent = new AIAgent();
 ### Pattern 3: Recording User Session
 
 ```javascript
-const axios = require('axios');
+const nova = require('axios').create({
+  headers: { Authorization: `Bearer ${process.env.NOVA_MEMORY_API_KEY}` },
+  maxRedirects: 0
+});
 const io = require('socket.io-client');
 const fs = require('fs');
 
@@ -172,7 +128,7 @@ class SessionRecorder {
   constructor(userId, serverUrl = 'http://localhost:3000') {
     this.userId = userId;
     this.serverUrl = serverUrl;
-    this.socket = io(serverUrl);
+    this.socket = io(serverUrl, { auth: { token: process.env.NOVA_MEMORY_API_KEY } });
     this.frames = [];
   }
 
@@ -207,7 +163,7 @@ class SessionRecorder {
       formData.append('source', 'screen');
       formData.append('description', `Screen capture at ${frame.timestamp}`);
 
-      await axios.post(`${this.serverUrl}/upload/image`, formData, {
+      await nova.post(`${this.serverUrl}/upload/image`, formData, {
         headers: formData.getHeaders()
       });
     }
@@ -235,7 +191,10 @@ setTimeout(() => {
 ### Pattern 4: Voice + Screen Agent
 
 ```javascript
-const axios = require('axios');
+const nova = require('axios').create({
+  headers: { Authorization: `Bearer ${process.env.NOVA_MEMORY_API_KEY}` },
+  maxRedirects: 0
+});
 const FormData = require('form-data');
 
 class VoiceScreenAgent {
@@ -246,7 +205,7 @@ class VoiceScreenAgent {
 
   async captureAndUploadScreen() {
     // Capture screenshot
-    const response = await axios.get(`${this.serverUrl}/capture/screen?format=jpg`, {
+    const response = await nova.get(`${this.serverUrl}/capture/screen?format=jpg`, {
       responseType: 'arraybuffer'
     });
 
@@ -257,7 +216,7 @@ class VoiceScreenAgent {
     formData.append('source', 'screen');
     formData.append('description', 'Current screen state');
 
-    await axios.post(`${this.serverUrl}/upload/image`, formData, {
+    await nova.post(`${this.serverUrl}/upload/image`, formData, {
       headers: formData.getHeaders()
     });
 
@@ -271,7 +230,7 @@ class VoiceScreenAgent {
     formData.append('duration', duration.toString());
     formData.append('description', 'Voice command');
 
-    const response = await axios.post(`${this.serverUrl}/upload/audio`, formData, {
+    const response = await nova.post(`${this.serverUrl}/upload/audio`, formData, {
       headers: formData.getHeaders()
     });
 
@@ -279,25 +238,25 @@ class VoiceScreenAgent {
   }
 
   async controlMouse(x, y, click = false) {
-    await axios.post(`${this.serverUrl}/control/mouse/move`, {
+    await nova.post(`${this.serverUrl}/control/mouse/move`, {
       x, y, smooth: true
     });
 
     if (click) {
-      await axios.post(`${this.serverUrl}/control/mouse/click`, {
+      await nova.post(`${this.serverUrl}/control/mouse/click`, {
         button: 'left'
       });
     }
   }
 
   async typeText(text) {
-    await axios.post(`${this.serverUrl}/control/keyboard/type`, {
+    await nova.post(`${this.serverUrl}/control/keyboard/type`, {
       text
     });
   }
 
   async pressKey(key, modifiers = []) {
-    await axios.post(`${this.serverUrl}/control/keyboard/key`, {
+    await nova.post(`${this.serverUrl}/control/keyboard/key`, {
       key,
       modifiers
     });
@@ -320,17 +279,19 @@ await agent.typeText('Hello from AI!');
 await agent.pressKey('enter');
 ```
 
-### Pattern 5: Sync Memory & Journal to Notion
-### Pattern 5: UNOVA + Notion Bridge
+### Pattern 5: Sync Memory & Journal to Notion and UNOVA
 
 Use the bridge endpoint to store memory/journal entries and push them into Notion or UNOVA.
 
 ```javascript
-const axios = require('axios');
+const nova = require('axios').create({
+  headers: { Authorization: `Bearer ${process.env.NOVA_MEMORY_API_KEY}` },
+  maxRedirects: 0
+});
 
 async function syncMemoryToNotion(serverUrl, entry) {
   try {
-    const response = await axios.post(`${serverUrl}/notion/memory`, {
+    const response = await nova.post(`${serverUrl}/notion/memory`, {
       userId: entry.userId,
       topic: entry.topic,
       value: entry.value,
@@ -339,15 +300,13 @@ async function syncMemoryToNotion(serverUrl, entry) {
 
     return response.data.pageId;
   } catch (error) {
-    console.error('Failed to sync memory entry to Notion:', error);
-    // In production, consider retry logic or more robust error handling here.
-    throw error;
+    throw new Error('Failed to sync memory entry to Notion: ' + (error.response?.status ?? 'connection error'));
   }
 }
 
 async function syncJournalToNotion(serverUrl, entry) {
   try {
-    const response = await axios.post(`${serverUrl}/notion/journal`, {
+    const response = await nova.post(`${serverUrl}/notion/journal`, {
       userId: entry.userId,
       title: entry.title,
       content: entry.content,
@@ -356,18 +315,21 @@ async function syncJournalToNotion(serverUrl, entry) {
 
     return response.data.pageId;
   } catch (error) {
-    console.error('Failed to sync journal entry to Notion:', error);
-    // In production, consider retry logic or more robust error handling here.
-    throw error;
+    throw new Error('Failed to sync journal entry to Notion: ' + (error.response?.status ?? 'connection error'));
   }
 }
 ```
 
 To auto-sync when storing memory/journal entries, set `syncToNotion: true` in the request body.
 
+```javascript
+const nova = require('axios').create({
+  headers: { Authorization: `Bearer ${process.env.NOVA_MEMORY_API_KEY}` },
+  maxRedirects: 0
+});
 const serverUrl = 'http://localhost:3000';
 
-await axios.post(`${serverUrl}/bridge/entry`, {
+await nova.post(`${serverUrl}/bridge/entry`, {
   userId: 'user123',
   entryType: 'memory',
   topic: 'Preferred stack',
@@ -375,18 +337,12 @@ await axios.post(`${serverUrl}/bridge/entry`, {
   tags: ['tech', 'stack']
 });
 
-await axios.post(`${serverUrl}/bridge/entry`, {
+await nova.post(`${serverUrl}/bridge/entry`, {
   userId: 'user123',
   entryType: 'journal',
   title: 'UNOVA sync',
   content: 'Pushed today’s summary to Notion and UNOVA.',
-  tags: ['daily', 'sync'],
-  notion: {
-    databaseId: 'your-notion-database-id'
-  },
-  unova: {
-    webhookUrl: 'https://your-unova-endpoint.example.com/hooks'
-  }
+  tags: ['daily', 'sync']
 });
 ```
 
@@ -395,9 +351,9 @@ await axios.post(`${serverUrl}/bridge/entry`, {
 ⚠️ **IMPORTANT:** This server provides powerful control over your computer. Use with caution:
 
 1. **Network Security:**
-   - Run on localhost only by default
+   - Set `NOVA_MEMORY_HOST=127.0.0.1` for a loopback-only listener
    - Use firewall rules to restrict access
-   - Consider authentication for production use
+   - Authenticate protected requests and Socket.IO connections in every environment
 
 2. **Input Validation:**
    - All endpoints validate inputs
@@ -434,17 +390,19 @@ await axios.post(`${serverUrl}/bridge/entry`, {
 
 ## Advanced Usage
 
+Use the authenticated `nova` HTTP client defined in the integration examples above.
+
 ### Custom Key Combinations
 
 ```javascript
 // Ctrl+Shift+T (open new terminal tab)
-await axios.post('http://localhost:3000/control/keyboard/key', {
+await nova.post('http://localhost:3000/control/keyboard/key', {
   key: 't',
   modifiers: ['leftcontrol', 'leftshift']
 });
 
 // Cmd+Space (macOS Spotlight)
-await axios.post('http://localhost:3000/control/keyboard/key', {
+await nova.post('http://localhost:3000/control/keyboard/key', {
   key: 'space',
   modifiers: ['leftsuper']
 });
@@ -454,29 +412,29 @@ await axios.post('http://localhost:3000/control/keyboard/key', {
 
 ```javascript
 // Get current position
-const pos = await axios.get('http://localhost:3000/control/mouse/position');
+const pos = await nova.get('http://localhost:3000/control/mouse/position');
 console.log('Mouse at:', pos.data.position);
 
 // Smooth movement
-await axios.post('http://localhost:3000/control/mouse/move', {
+await nova.post('http://localhost:3000/control/mouse/move', {
   x: 800,
   y: 600,
   smooth: true
 });
 
 // Double click
-await axios.post('http://localhost:3000/control/mouse/click', {
+await nova.post('http://localhost:3000/control/mouse/click', {
   button: 'left',
   double: true
 });
 
 // Right click
-await axios.post('http://localhost:3000/control/mouse/click', {
+await nova.post('http://localhost:3000/control/mouse/click', {
   button: 'right'
 });
 
 // Scroll
-await axios.post('http://localhost:3000/control/mouse/scroll', {
+await nova.post('http://localhost:3000/control/mouse/scroll', {
   amount: 5
 });
 ```

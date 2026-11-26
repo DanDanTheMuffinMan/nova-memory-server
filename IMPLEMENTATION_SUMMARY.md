@@ -75,11 +75,7 @@ The server now intelligently detects display availability:
    - Troubleshooting guide
    - Advanced usage examples
 
-2. **test-client.js** - Full test suite demonstrating:
-   - All endpoint usage
-   - WebSocket streaming
-   - Error handling
-   - Best practices
+2. **test-client.js** checks authenticated HTTP and Socket.IO admission by default. `--peripherals` opts into operations on an isolated test machine.
 
 3. **.gitignore** - Excludes node_modules, package-lock.json, logs
 
@@ -108,8 +104,15 @@ The server now intelligently detects display availability:
 ## Usage Example
 
 ```javascript
+// Run in a trusted Node.js process with NOVA_MEMORY_API_KEY set.
+const nova = require('axios').create({
+  headers: { Authorization: `Bearer ${process.env.NOVA_MEMORY_API_KEY}` },
+  maxRedirects: 0
+});
+const io = require('socket.io-client');
+
 // Connect and start screen monitoring
-const socket = io('http://localhost:3000');
+const socket = io('http://localhost:3000', { auth: { token: process.env.NOVA_MEMORY_API_KEY } });
 socket.emit('start-screen-stream', { fps: 2 });
 
 socket.on('screen-frame', async (data) => {
@@ -118,7 +121,7 @@ socket.on('screen-frame', async (data) => {
   
   // Take action based on AI decision
   if (analysis.action === 'click') {
-    await axios.post('http://localhost:3000/control/mouse/click', {
+    await nova.post('http://localhost:3000/control/mouse/click', {
       button: 'left'
     });
   }
@@ -143,9 +146,9 @@ socket.on('screen-frame', async (data) => {
 ## Security Considerations
 
 ⚠️ **Important:** This server provides powerful control over the computer:
-1. Run on localhost only (default)
+1. Set `NOVA_MEMORY_HOST=127.0.0.1` to restrict the listener to loopback
 2. Use firewall rules to restrict access
-3. Consider authentication for production
+3. Configure the inbound `NOVA_MEMORY_API_KEY` in each trusted client
 4. Ensure AI agents are properly authorized
 5. Monitor and log all peripheral control actions
 
@@ -159,7 +162,6 @@ socket.on('screen-frame', async (data) => {
 ## Future Enhancements (Optional)
 
 - Database integration for persistence
-- Authentication/authorization
 - Rate limiting
 - Multi-monitor support
 - Video recording (not just screenshots)
@@ -179,4 +181,4 @@ All requirements from the problem statement have been successfully implemented:
 ✅ Example implementations
 ✅ Graceful error handling
 
-The implementation is production-ready for local use and can be extended with authentication and database support for production deployments.
+The server uses bearer authentication and in-memory storage. Validate the configured integrations and host permissions before deployment.

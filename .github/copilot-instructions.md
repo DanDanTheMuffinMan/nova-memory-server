@@ -23,7 +23,7 @@ Nova Memory Server is an Express-based backend that provides memory storage, jou
 /
 ├── index.js                    # Main server with all endpoints (1700+ lines)
 ├── export-openapi.js           # OpenAPI schema generator
-├── test-client.js              # Test suite demonstrating all features
+├── test-client.js              # Authenticated loopback client
 ├── package.json                # Dependencies and scripts
 ├── README.md                   # User-facing API documentation
 ├── INTEGRATION_GUIDE.md        # Integration patterns for Custom GPTs
@@ -35,7 +35,7 @@ Nova Memory Server is an Express-based backend that provides memory storage, jou
 
 ## Development Setup
 1. Install dependencies: `npm install`
-2. Start the server: `npm start` (runs on port 3000 by default)
+2. Load a dedicated random `NOVA_MEMORY_API_KEY` of at least 32 UTF-8 bytes, then start the server with `npm start` (runs on port 3000 by default)
 3. Server runs on port 3000 by default (configurable via `PORT` environment variable)
 4. Test functionality: `node test-client.js` (requires server to be running)
 5. Export OpenAPI schema: `npm run export-schema [base-url]`
@@ -53,7 +53,7 @@ The server supports these optional environment variables:
 - `NOTION_JOURNAL_DATABASE_ID` - Specific database for journal entries
 - `NOTION_*_PROPERTY` - Property name overrides (Title, Topic, Value, Content, etc.)
 - `UNOVA_WEBHOOK_URL` - UNOVA webhook endpoint
-- `UNOVA_API_KEY` - UNOVA authentication
+- `UNOVA_API_KEY` - outbound UNOVA webhook authentication
 - `UNOVA_EVENT_NAME` - Event name for UNOVA notifications
 
 All configuration is optional - the server works without environment variables for basic functionality.
@@ -100,9 +100,8 @@ All configuration is optional - the server works without environment variables f
 - For media storage, store metadata separately and include base64 data in retrieval endpoints
 
 ## Testing Approach
-- **No formal test framework** (Jest, Mocha, etc.) - uses manual testing via test client
-- Test client in `test-client.js` demonstrates all functionality
-- Run tests: `node test-client.js` (requires server running on localhost:3000)
+- Run the regression suite with `npm test` (Node’s built-in test runner).
+- With the server running, `node test-client.js` checks authenticated read-only HTTP and Socket.IO admission. `--peripherals` opts into keyboard, mouse, and capture operations on an isolated test machine.
 - Test both success and error cases
 - For peripheral control, test both with and without display availability
 - For WebSocket streaming, test connection, start/stop streaming, and error scenarios
@@ -110,7 +109,7 @@ All configuration is optional - the server works without environment variables f
 
 ## Security Considerations
 - CORS is enabled for all origins (development default) - should be restricted in production
-- No authentication/authorization implemented - server should run on localhost only
+- Protected HTTP routes require `Authorization: Bearer <NOVA_MEMORY_API_KEY>`. Socket.IO uses `auth.token` or a bearer header. Keep the token in the environment or credential store; public `GET /` and `GET /openapi.json` support discovery.
 - Peripheral control endpoints provide powerful system access - ensure proper access controls
 - Input validation required on all endpoints to prevent injection attacks
 - Media uploads are limited to memory storage - consider size limits for production use
@@ -121,7 +120,7 @@ All configuration is optional - the server works without environment variables f
 - `README.md` - User-facing API documentation with usage examples
 - `INTEGRATION_GUIDE.md` - Detailed integration guide for Custom GPTs and AI agents
 - `IMPLEMENTATION_SUMMARY.md` - Technical implementation details
-- `test-client.js` - Comprehensive test suite and examples
+- `test-client.js` - Authenticated loopback client and optional peripheral examples
 
 ## Common Tasks
 
@@ -167,7 +166,7 @@ All configuration is optional - the server works without environment variables f
 ```bash
 npm install          # Install dependencies
 npm start           # Start server (http://localhost:3000)
-node test-client.js # Run test suite (in separate terminal)
+node test-client.js # Check authenticated HTTP and Socket.IO in a second terminal
 ```
 
 ### Common Commands

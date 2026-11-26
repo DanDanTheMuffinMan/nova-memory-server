@@ -1,27 +1,21 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
-const { createServer } = require('node:net');
+const { randomBytes } = require('node:crypto');
+const { waitForLoopbackPort } = require('./fixtures/loopback-readiness.cjs');
 const { once } = require('node:events');
 const path = require('node:path');
 
-async function freePort() {
-  const server = createServer();
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const port = server.address().port;
-  await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-  return port;
-}
-
 async function main() {
-  const port = await freePort();
-  const base = `http://127.0.0.1:${port}`;
+  const apiKey = randomBytes(32).toString('hex');
+  const auth = { Authorization: `Bearer ${apiKey}` };
   const child = spawn(process.execPath, [path.resolve(__dirname, '../index.js')], {
     cwd: path.resolve(__dirname, '..'),
     env: {
       ...process.env,
-      PORT: String(port),
+      PORT: '0',
+      NOVA_MEMORY_HOST: '127.0.0.1',
+      NOVA_MEMORY_API_KEY: apiKey,
       DISPLAY: '',
       NOTION_TOKEN: '',
       NOTION_DATABASE_ID: '',
@@ -35,20 +29,11 @@ async function main() {
     stream.on('data', chunk => { log += chunk.toString(); });
   }
   try {
-    let ready = false;
-    for (let attempt = 0; attempt < 90 && !ready; attempt++) {
-      if (child.exitCode !== null) throw Error('Server exited before readiness: ' + log);
-      try {
-        const response = await fetch(base + '/', { signal: AbortSignal.timeout(350) });
-        ready = response.ok;
-      } catch {}
-      if (!ready) await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    assert.ok(ready, 'Server failed to start: ' + log);
+    const base = 'http://127.0.0.1:' + await waitForLoopbackPort(child);
 
     const jsonPost = (endpoint, body) => fetch(base + endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...auth, 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     const memory = { userId: 'alpha,beta', topic: 'only-string', value: 'first' };
@@ -73,7 +58,7 @@ async function main() {
     }
 
     async function getJSON(endpoint) {
-      const response = await fetch(base + endpoint);
+      const response = await fetch(base + endpoint, { headers: auth });
       return { status: response.status, data: await response.json() };
     }
     const validMemory = await getJSON('/memory?userId=alpha%2Cbeta');
@@ -96,7 +81,7 @@ async function main() {
     form.append('userId', 'alpha');
     form.append('userId', 'beta');
     form.append('image', new Blob(['data'], { type: 'image/png' }), 'demo.png');
-    const mediaResponse = await fetch(base + '/upload/image', { method: 'POST', body: form });
+    const mediaResponse = await fetch(base + '/upload/image', { method: 'POST', headers: auth, body: form });
     assert.equal(mediaResponse.status, 400, 'multiple userId form fields must not alias a string ID');
     const media = await getJSON('/media?userId=alpha%2Cbeta');
     assert.equal(media.status, 200);

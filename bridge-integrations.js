@@ -3,14 +3,55 @@
 // Optional Notion/UNOVA delivery for /bridge/entry, isolated for dependency-free tests.
 const NOTION_API_URL = 'https://api.notion.com/v1/pages';
 const DEFAULT_NOTION_VERSION = '2022-06-28';
+const DELIVERY_TIMEOUT_MS = 10_000;
+class BridgeDeliveryTimeout extends Error {}
+
+// Upstream responses and transport exceptions can contain private data,
+// reflected authorization headers, or internal URLs. Return only bounded
+// diagnostics; never cache or relay the raw response body or error message.
+function deliveryFailure(error) {
+  if (error instanceof BridgeDeliveryTimeout) {
+    return { enabled: true, success: false, error: 'Bridge delivery timed out; remote outcome unknown' };
+  }
+  const status = error?.response?.status;
+  if (Number.isInteger(status) && status >= 300 && status <= 599) {
+    return { enabled: true, success: false, status, error: 'Bridge delivery rejected by upstream; remote outcome unknown' };
+  }
+  return { enabled: true, success: false, error: 'Bridge delivery failed; remote outcome unknown' };
+}
 
 function createBridgeIntegrations({
   env = process.env,
+  deliveryTimeoutMs = DELIVERY_TIMEOUT_MS,
   post = (...args) => require('axios').post(...args)
 } = {}) {
-  const resolveNotionConfig = (overrides = {}) => ({
-    token: overrides.token || env.NOTION_TOKEN,
-    databaseId: overrides.databaseId || env.NOTION_DATABASE_ID,
+  async function postWithDeadline(url, body, options) {
+    const controller = new AbortController();
+    let timer;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new BridgeDeliveryTimeout());
+        controller.abort();
+      }, deliveryTimeoutMs);
+    });
+    try {
+      return await Promise.race([
+        // A redirect can forward private payloads and credentials to an unapproved endpoint.
+        post(url, body, { ...options, maxRedirects: 0, signal: controller.signal }),
+        deadline
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  const databases = new Map([
+    ['memory', env.NOTION_MEMORY_DATABASE_ID],
+    ['journal', env.NOTION_JOURNAL_DATABASE_ID]
+  ]);
+  const resolveNotionConfig = (entryType, overrides = {}) => ({
+    token: env.NOTION_TOKEN,
+    databaseId: databases.get(entryType) || env.NOTION_DATABASE_ID,
     titleProperty: overrides.titleProperty || env.NOTION_TITLE_PROPERTY || 'Name',
     tagsProperty: overrides.tagsProperty || env.NOTION_TAGS_PROPERTY,
     userProperty: overrides.userProperty || env.NOTION_USER_PROPERTY,
@@ -68,8 +109,16 @@ function createBridgeIntegrations({
     ];
   };
   
-  const createNotionEntry = async ({ title, content, tags, userId, entryType, overrides }) => {
-    const config = resolveNotionConfig(overrides);
+  const createNotionEntry = async ({ title, content, tags, userId, entryType, overrides = {} }) => {
+    // Do not let an API caller borrow the server's Notion integration identity
+    // to write into a different database, or inject credentials into the bridge.
+    const databaseId = databases.get(entryType) || env.NOTION_DATABASE_ID;
+    if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides) ||
+        Object.hasOwn(overrides, 'token') ||
+        (Object.hasOwn(overrides, 'databaseId') && overrides.databaseId !== databaseId)) {
+      return { enabled: false, success: false, error: 'Notion database and token must be configured on the server' };
+    }
+    const config = resolveNotionConfig(entryType, overrides);
     if (!config.token || !config.databaseId) {
       return { enabled: false };
     }
@@ -78,7 +127,7 @@ function createBridgeIntegrations({
     const children = buildNotionChildren({ content });
   
     try {
-      const response = await post(
+      const response = await postWithDeadline(
         NOTION_API_URL,
         {
           parent: { database_id: config.databaseId },
@@ -101,11 +150,7 @@ function createBridgeIntegrations({
         url: response.data?.url
       };
     } catch (error) {
-      return {
-        enabled: true,
-        success: false,
-        error: error.response?.data || error.message
-      };
+      return deliveryFailure(error);
     }
   };
   
@@ -119,7 +164,7 @@ function createBridgeIntegrations({
     }
   
     try {
-      const response = await post(
+      const response = await postWithDeadline(
         config.webhookUrl,
         {
           event: config.eventName,
@@ -139,11 +184,7 @@ function createBridgeIntegrations({
         status: response.status
       };
     } catch (error) {
-      return {
-        enabled: true,
-        success: false,
-        error: error.response?.data || error.message
-      };
+      return deliveryFailure(error);
     }
   };
 

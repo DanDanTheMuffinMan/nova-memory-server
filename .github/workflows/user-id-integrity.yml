@@ -3,6 +3,15 @@ on:
   pull_request:
     paths:
       - "index.js"
+      - "api-security.js"
+      - "user-id.js"
+      - "test/user-id.test.js"
+      - "test/user-id-http-smoke.cjs"
+      - ".github/workflows/user-id-integrity.yml"
+  push:
+    paths:
+      - "index.js"
+      - "api-security.js"
       - "user-id.js"
       - "test/user-id.test.js"
       - "test/user-id-http-smoke.cjs"
