@@ -102,3 +102,34 @@ test('missing staging opt-in or stale build blocks all bearer requests', async (
   }
   assert.equal(calls.length, 0);
 });
+
+
+test('auth-only schema exposes exactly the read-only status operation and inherits bearer', async () => {
+  const restricted = getOpenApiSpec(origin, true);
+  assert.deepEqual(Object.keys(restricted.paths), ['/notion/status']);
+  assert.deepEqual(Object.keys(restricted.paths['/notion/status']), ['get']);
+  assert.deepEqual(restricted.security, [{ bearerAuth: [] }]);
+  assert.equal(restricted.paths['/notion/status'].get.operationId, 'getNotionStatus');
+  assert.equal(restricted.paths['/notion/status'].get.security, undefined);
+  assert.ok(getOpenApiSpec(origin).paths['/memory'].post);
+  const { calls, request } = fixture({ 0: response(200, restricted),
+    3: response(200, { configured: false, databases: { memory: false, journal: false } }) });
+  const result = await checkStaging({ origin, key, expectedSha, authOnly: true, request });
+  assert.equal(result.stagingKey, 'admitted');
+  assert.equal(calls.length, 4);
+});
+
+test('auth-only gate rejects broad schema before any bearer and fails on any configured integration', async () => {
+  const broad = fixture();
+  await assert.rejects(checkStaging({ origin, key, expectedSha, authOnly: true, request: broad.request }), /authentication-only staging/);
+  assert.equal(broad.calls.length, 1);
+  assert.equal(broad.calls[0].options.headers.Authorization, undefined);
+  for (const state of [
+    { configured: true, databases: { memory: false, journal: false } },
+    { configured: false, databases: { memory: true, journal: false } },
+    { configured: false, databases: { memory: false, journal: true } }
+  ]) {
+    const { request } = fixture({ 0: response(200, getOpenApiSpec(origin, true)), 3: response(200, state) });
+    await assert.rejects(checkStaging({ origin, key, expectedSha, authOnly: true, request }), /no integration configuration/);
+  }
+});

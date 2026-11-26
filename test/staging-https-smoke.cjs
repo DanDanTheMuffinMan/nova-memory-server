@@ -207,7 +207,11 @@ async function launcherBoundary() {
     const schema = await request('/openapi.json');
     assert.equal(schema.status, 200);
     assert.equal(schema.headers.get('X-Nova-Staging-Build'), build);
-    assert.equal((await schema.json()).servers[0].url, origin);
+    const actionSchema = await schema.json();
+    assert.equal(actionSchema.servers[0].url, origin);
+    assert.deepEqual(Object.keys(actionSchema.paths), ['/notion/status']);
+    assert.deepEqual(Object.keys(actionSchema.paths['/notion/status']), ['get']);
+    assert.deepEqual(actionSchema.security, [{ bearerAuth: [] }]);
     for (const token of [undefined, 'x'.repeat(64)]) {
       assert.equal((await request('/notion/status', 'GET', token)).status, 401);
     }

@@ -344,7 +344,7 @@ app.post('/notion/journal', async (req, res) => {
 app.get('/openapi.json', (req, res) => {
   const serverUrl = publicOrigin || `${req.protocol}://${req.get('host')}`;
   if (stagingBuild) res.set('X-Nova-Staging-Build', stagingBuild);
-  res.json(getOpenApiSpec(serverUrl));
+  res.json(getOpenApiSpec(serverUrl, process.env.NOVA_STAGING_AUTH_ONLY === '1'));
 });
 
 // Health check

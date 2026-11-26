@@ -15,7 +15,7 @@ function stagingOrigin(value) {
   return parsed.origin;
 }
 
-async function checkStaging({ origin, key, expectedSha, request = fetch } = {}) {
+async function checkStaging({ origin, key, expectedSha, authOnly = false, request = fetch } = {}) {
   const base = stagingOrigin(origin);
   if (typeof expectedSha !== 'string' || !/^[a-f0-9]{40}$/.test(expectedSha)) {
     throw new Error('Set NOVA_STAGING_EXPECTED_SHA to the full reviewed commit SHA');
@@ -53,6 +53,10 @@ async function checkStaging({ origin, key, expectedSha, request = fetch } = {}) 
       schema.paths['/notion/status'].get.security !== undefined) {
     throw new Error('Schema: expected matching Nova HTTPS origin and inherited bearer authentication');
   }
+  if (authOnly && (Object.keys(schema.paths).length !== 1 ||
+      Object.keys(schema.paths['/notion/status']).length !== 1)) {
+    throw new Error('Schema: authentication-only staging must advertise only GET /notion/status');
+  }
   const anonymous = await get('/notion/status', 'Anonymous admission');
   if (anonymous.status !== 401) throw new Error('Anonymous admission: expected HTTP 401, got ' + anonymous.status);
   const invalidKey = randomBytes(32).toString('hex');
@@ -66,6 +70,9 @@ async function checkStaging({ origin, key, expectedSha, request = fetch } = {}) 
       typeof status?.databases?.journal !== 'boolean') {
     throw new Error('Notion status: unexpected response shape');
   }
+  if (authOnly && (status.configured || status.databases.memory || status.databases.journal)) {
+    throw new Error('Notion status: authentication-only staging must have no integration configuration');
+  }
   // Report booleans only. Never output the key, schema, response body or private records.
   return { schema: 'pass', buildIdentity: 'matched', anonymous: 'denied', wrongKey: 'denied', stagingKey: 'admitted',
     notionConfigured: status.configured, memoryDatabaseConfigured: status.databases.memory,
@@ -74,7 +81,7 @@ async function checkStaging({ origin, key, expectedSha, request = fetch } = {}) 
 
 if (require.main === module) {
   checkStaging({ origin: process.env.NOVA_STAGING_ORIGIN, key: process.env.NOVA_MEMORY_API_KEY,
-    expectedSha: process.env.NOVA_STAGING_EXPECTED_SHA })
+    expectedSha: process.env.NOVA_STAGING_EXPECTED_SHA, authOnly: process.env.NOVA_STAGING_AUTH_ONLY === '1' })
     .then(result => console.log(JSON.stringify(result)))
     .catch(error => { console.error('STAGING GATE FAILED: ' + error.message); process.exitCode = 1; });
 }

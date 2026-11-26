@@ -27,6 +27,8 @@ On the explicitly designated nonproduction server only, set `NOVA_STAGING_BUILD_
 node check-staging.js
 ```
 
+For the dedicated Render authentication-only launcher, run `NOVA_STAGING_AUTH_ONLY=1 node check-staging.js` instead. Import the staging service's live `/openapi.json` into a separate test GPT: it advertises only the bearer-protected `getNotionStatus` operation. The strict gate rejects a broader schema before sending bearer credentials and fails if any Notion configuration flag is true. The normal schema and normal gate remain available for separately authorized integration rehearsals.
+
 Before sending any bearer, the gate requires the server's explicit staging build marker to match the reviewed commit. It then checks the public schema's exact origin and bearer contract, anonymous and wrong-key rejection, and authenticated Notion configuration status. It never follows redirects, writes entries, performs capture, sends a webhook, or prints credentials or response bodies. The known Render production hostname is rejected. A pass is not evidence of live GPT Action credential binding, external delivery, or Mac permissions; those require separate authorized verification.
 
 ## 🚀 Quick Start with Custom GPT

@@ -14,7 +14,7 @@ const errorResponse = (description) => ({
 });
 
 // Lightweight OpenAPI schema for Custom GPT / action import
-const getOpenApiSpec = (serverUrl) => ({
+const getFullOpenApiSpec = (serverUrl) => ({
   openapi: '3.0.0',
   security: [{ bearerAuth: [] }],
   components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },
@@ -801,6 +801,15 @@ const getOpenApiSpec = (serverUrl) => ({
     }
   }
 });
+
+// Advertise only capabilities actually admitted by the auth-only guard.
+function getOpenApiSpec(serverUrl, authOnly = false) {
+  const spec = getFullOpenApiSpec(serverUrl);
+  if (!authOnly) return spec;
+  spec.info.description = 'Authentication-only staging. No memory, journal, delivery, capture or control operations are available.';
+  spec.paths = { '/notion/status': { get: spec.paths['/notion/status'].get } };
+  return spec;
+}
 
 function parsePublicOrigin(value) {
   if (!value) return undefined;
