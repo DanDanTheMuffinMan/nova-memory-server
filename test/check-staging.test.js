@@ -133,3 +133,38 @@ test('auth-only gate rejects broad schema before any bearer and fails on any con
     await assert.rejects(checkStaging({ origin, key, expectedSha, authOnly: true, request }), /no integration configuration/);
   }
 });
+
+
+test('auth-only gate rejects unexpected Action routing or authentication contract before any bearer', async () => {
+  for (const mutate of [
+    schema => { schema.paths['/notion/status'].get.servers = [{ url: 'https://other.example.invalid' }]; },
+    schema => { schema.security.push({}); },
+    schema => {
+      schema.components.securitySchemes.other = { type: 'apiKey', name: 'X-Other', in: 'header' };
+      schema.security.push({ other: [] });
+    },
+    schema => { schema.paths['/notion/status'].get.operationId = 'otherOperation'; },
+    schema => { schema.paths['/notion/status'].get.callbacks = { unexpected: {} }; }
+  ]) {
+    const schema = getOpenApiSpec(origin, true);
+    mutate(schema);
+    const { calls, request } = fixture({ 0: response(200, schema),
+      3: response(200, { configured: false, databases: { memory: false, journal: false } }) });
+    await assert.rejects(checkStaging({ origin, key, expectedSha, authOnly: true, request }),
+      /contract differs from the reviewed local schema/);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].options.headers.Authorization, undefined);
+  }
+});
+
+test('auth-only exact contract accepts different JSON object key ordering', async () => {
+  const reorder = value => Array.isArray(value) ? value.map(reorder) :
+    value && typeof value === 'object' ? Object.fromEntries(
+      Object.keys(value).reverse().map(name => [name, reorder(value[name])])) : value;
+  const schema = reorder(getOpenApiSpec(origin, true));
+  const { calls, request } = fixture({ 0: response(200, schema),
+    3: response(200, { configured: false, databases: { memory: false, journal: false } }) });
+  const result = await checkStaging({ origin, key, expectedSha, authOnly: true, request });
+  assert.equal(result.stagingKey, 'admitted');
+  assert.equal(calls.length, 4);
+});

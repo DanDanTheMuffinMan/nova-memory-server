@@ -3,6 +3,8 @@
 // Read-only gate for an explicitly designated NONPRODUCTION HTTPS origin.
 // Never send credentials until public schema, destination and negative admission pass.
 const { randomBytes } = require('node:crypto');
+const { isDeepStrictEqual } = require('node:util');
+const { getOpenApiSpec } = require('./openapi');
 
 function stagingOrigin(value) {
   let parsed;
@@ -56,6 +58,12 @@ async function checkStaging({ origin, key, expectedSha, authOnly = false, reques
   if (authOnly && (Object.keys(schema.paths).length !== 1 ||
       Object.keys(schema.paths['/notion/status']).length !== 1)) {
     throw new Error('Schema: authentication-only staging must advertise only GET /notion/status');
+  }
+  // The restricted Action contract must match the reviewed local schema, not just its
+  // top-level URL and path count. Operation-level server overrides and optional
+  // security alternatives can change how a client routes or authenticates requests.
+  if (authOnly && !isDeepStrictEqual(schema, getOpenApiSpec(base, true))) {
+    throw new Error('Schema: authentication-only contract differs from the reviewed local schema');
   }
   const anonymous = await get('/notion/status', 'Anonymous admission');
   if (anonymous.status !== 401) throw new Error('Anonymous admission: expected HTTP 401, got ' + anonymous.status);
