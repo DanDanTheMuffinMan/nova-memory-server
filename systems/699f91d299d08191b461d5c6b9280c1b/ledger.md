@@ -762,3 +762,54 @@ November 25, 2026: in disposable Linux, copied the exact committed check-staging
 - Actual complete committed suite commands, run from that directory with HOME="$PWD/fixture-home", PYTHONPATH="$PWD/deps", NO_PROXY/no_proxy="*", UNOVA_REQUIRE_NATIVE_PORT_OWNER unset: python -B -m unittest discover -s tests -p 'test_canvas_proxy.py' -v -> 15/15 passed, 8.033s, exit 0 (proxy.log). python -B -m unittest discover -s tests -p 'test_canvas_supervisor.py' -v -> 7 passed, 3 explicitly native-only skipped, 0 failures, 0.440s, exit 0 (supervisor.log). Actual socket-based offline tests passed, including read boundary, redirect/proxy containment, recovery, command admission, ritual and retired write route. These are exact committed-file tests, not reconstructed source.
 - Additional actual real Flask dispatch acceptance (not mocked request objects): imported the exact Canvas application with its exact sense dependency; AST-extracted the complete committed start_http_bridge function and captured the Flask app by replacing only Flask.run/thread startup and port ownership probe. Actual Flask test clients called /health on both apps with GET/HEAD, foreign Host, foreign Origin, null Origin and nonloopback address (16 denied, HTTP 403), ordinary local and matching Origin (8 accepted, HTTP 200); 24/24 assertions passed, no queue created. No actual command handler or live service was executed. The separate two-listener real TCP integration request was rejected by the workspace service with HTTP 403 before harness execution, so no real Flask TCP/proxied dispatch acceptance claimed. Native macOS owner, prebound socket and full recovery remain the three skipped committed tests. The offline suites use actual loopback sockets with stubbed interfaces as specified by their tests.
 - Disposition: focused TESTED -> exact-file Linux regression TESTED plus real Flask WSGI read admission TESTED. Hosted integration remains BLOCKED, not staging-ready. No UNOVA source changes, no production merge/deploy, credential changes, external messages, owned-host mutations or automation changes. Rollback: no runtime changes; leave draft unmerged and disregard disposable test workspace if desired. Next: restore observable GitHub CI execution and require all five hosted jobs with actual step evidence, including native real Flask direct/proxied routes and LaunchAgent/Codex gates, before feature expansion or owned-host rollout. Do not repeat unchanged CI retries.
+
+
+### November 28 (12:00–12:03 UTC / 06:00–06:03 Central): complete alternative Linux unit-regression gate
+
+- Reviewed five-plus prior outputs and canonical ledger at 7c8e96c14c947770a8bb1bf64d770adcdd70c8aa. UNOVA draft #19 exact head 8b728937cccfe5e0d97c0b58dcb22095431a15df, 82 commits, open/draft/mergeable/unmerged. Exact-head workflows 46128316057 and 46128316069 remain completed failure; no unchanged retry. Memory staging #22 remains a1f166388792143a0bc90a55ed06b868cb32db47, draft and mergeable. Both registered Macs offline (230h/1453h since seen). MarcoPolo available, clock 12:00:52 UTC, Python 3.11.18, prior /tmp not retained; unauthenticated private Git clone not available. No credentials bypassed.
+- Fingerprint UNOVA420/UNOVA|exact-head-ci-evidence-unavailable|8b728937cccfe5e0d97c0b58dcb22095431a15df|2026-11-28: extend preceding exact-file Canvas-only acceptance to the six other Python regression suites in actual offline-compatibility workflow. Materialized 20 exact candidate files using authorized GitHub base64 retrieval, Git blob verification for each, and bounded transfer for large master file. Isolated workspace /workspace/artifacts/unova-offline-8b72893-20261128T1200Z; no full checkout or live launcher. Fixture HOME and only local fixture tests; model callers use fake clients, launcher tests use helper slices and disposable files/processes, Oboe tests mock keyboard/speech. Six actual suite exit codes 0: routing 11, requests 33, callers 17, preflight 15, launcher 63, Oboe 5 = 144 new exact-head passes. Across preceding run's two suites at same SHA: 166 passed, 3 native-only skipped, 0 failures, all eight committed Python regression suites covered across two runs. Prior 24 Flask assertions separate; no duplicate count. No native macOS, full TCP Flask, checkout/submodule, portable packaging, Node build or Codex compilation acceptance at this head. No production readiness inferred.
+- Artifact: /workspace/artifacts/unova-offline-8b72893-20261128T1200Z/acceptance-receipt.txt plus six raw test logs. Receipt copied below for durable evidence; workspace persistence across runs not guaranteed. Reproduction: from isolated exact-file root with fixture HOME, run python -B -m unittest discover -s tests -p '<suite>.py' -v individually; executable bits enabled on three fixture shell scripts. No UNOVA source changes. Disposition: exact-file partial Linux TESTED -> all eight Linux unit-regression suites TESTED (3 native-only skips); hosted CI still BLOCKED. Next: restore observable hosted jobs and require all five successful including macOS and non-unit steps, before source expansion or owned-host rollout. Rollback: no installation; leave draft unmerged, disregard isolated workspace. No production merges/deployments, credential changes, external messages, owned-host mutations or automation modifications.
+
+```text
+Sat Nov 28 12:02:34 UTC 2026
+Python 3.11.18
+Candidate 8b728937cccfe5e0d97c0b58dcb22095431a15df
+ec6844da111a0e0fbdb17764b09e771d184e45d3 bin/install_launchagent.sh
+ef149b1a5613c76edb649cbaba2ae6da897ff9fa bin/unova_auto_commit.sh
+a439e736702ab47cc46c9ccacfe9c69aefcf1a67 bin/unova_env.sh
+6ff7c004436f4950c25e9640be8dddaec712b316 core/model_alias.py
+b2400c44b2c0ea431e2062669e71288855df1830 core/openai_requests.py
+5fb0227165c846fe6406822214e9c25aeb6ec151 rituals/hotkeyd.py
+5bb787f22a5f475fc31bc5bb11f9ad9afe84f9c4 scripts/oboe_daemon.py
+afc96e16fe1b79495617690979abf04fc7ed2166 scripts/owned_host_preflight.py
+88c3c696b8e49248379a92753fae003a085f878d services/bridge/gpt_bridge.py
+027efd334df078f3950e4db375f7294b76989116 tests/test_astra_callers.py
+c6faeaef68c9daea844ef8e9f649501b337e8dd2 tests/test_launcher_ports.py
+1ba05c632d1eff9251a4301af0e5f7c35c29b901 tests/test_model_alias.py
+31e16d26318ac04ea16ed7089e59582ee99a33ab tests/test_oboe_lifecycle.py
+7b55eb7bf011f2a7e1b75ded19291042f590e8eb tests/test_openai_requests.py
+6d8086c044b2e5c0bdb69e346a82013ac74d9dba tests/test_owned_host_preflight.py
+44eb63c7a416c0f94e75b4f7cdea55f7fa484ea8 tools/model_alias_guard.py
+88c3c696b8e49248379a92753fae003a085f878d gpt_bridge.py
+3294a4d87be59f9eee3782f48cab6749018b00ef reflex_engine.py
+97b578a1345a77eafd2aa4cd04324ec85276f61d unova_master.py
+69f45b60a6f3ba5be1b7d65d95be133b697af789 launch_everything.sh
+6ab840009ffbcf5b664949047a18ec4f17b99edaaaf3f0b37c224dd29afeb261  test_astra_callers.log
+Ran 17 tests in 0.744s
+OK
+51be543b0de76544005d2bac1e0d408d9504ae7130f3d915109c9fc2fc254ea4  test_launcher_ports.log
+Ran 63 tests in 9.142s
+OK
+7a4e462c13bb500bd1142c5b196376d3c9f62139b2a693c9a7aeb708c342d772  test_model_alias.log
+Ran 11 tests in 0.001s
+OK
+9d1500993533cb90fea6229c90cfd5762c58328508fd2d8d583cefb9545ad563  test_oboe_lifecycle.log
+Ran 5 tests in 0.020s
+OK
+4f371b48bf3f388f58f6f65364d2bb3d474e547ac716b1a92bb590b9ef5eb1b0  test_openai_requests.log
+Ran 33 tests in 0.004s
+OK
+1357500e6027ee90f61d15f5683d9589c217672ebb8f357369440d78355cea1f  test_owned_host_preflight.log
+Ran 15 tests in 0.458s
+OK
+```
