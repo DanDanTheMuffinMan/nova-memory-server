@@ -813,3 +813,36 @@ OK
 Ran 15 tests in 0.458s
 OK
 ```
+
+
+### November 28 (12:57–12:58 UTC / 06:57–06:58 Central): portable package execution acceptance
+
+- Reviewed the five most recent canonical outputs and ledger at 91b65badafe1fae89a93cab612de1eda802da79a; UNOVA draft #19 remains open, draft, mergeable, unmerged, exact head 8b728937cccfe5e0d97c0b58dcb22095431a15df. Both exact-head workflows 46128316057 and 46128316069 still failed, same five job IDs as prior retry. Both owned Macs offline (231h/1454h since last seen). Memory staging draft #22 unchanged at a1f166388792143a0bc90a55ed06b868cb32db47. Prior workspace retained. No unchanged CI retry.
+- Fingerprint UNOVA420/UNOVA|exact-head-ci-evidence-unavailable|8b728937cccfe5e0d97c0b58dcb22095431a15df|2026-11-28: advance beyond eight Python unit suites by executing remaining portable package and syntax checks from actual offline-compatibility workflow, plus real installer acceptance. Retrieved 15 exact committed portable files through authorized GitHub connector, matched all Git blob hashes, enabled executable mode for two fixture scripts. Ran strict bootstrap, three individual shell syntax checks (bootstrap, installer, launcher), six Python compile checks on retained verified files; all exit zero. Version 1.1.0, exact AGENTS marker/template match and verified context marker. No Git work tree in this materialized fixture; no submodule status or full checkout acceptance claimed.
+- Executed actual nova-install --dry-run and --apply in temporary isolated target containing existing AGENTS instructions and target-owned context/decisions. Five assertions passed: dry-run no file/mode changes, apply preserves existing instructions and target-owned files, installed target strict check, second apply content/mode idempotence, conflicting VERSION returns exit 3 and preserves target file/mode snapshot. Temporary fixture cleaned up. No real repository installation; no symlink/race or native macOS acceptance claimed. Reproduce source gate with ./scripts/nova-bootstrap check --strict; syntax and fixture receipt retained at /workspace/artifacts/unova-portable-8b72893-20261128T1257Z/acceptance-receipt.txt and three logs. No UNOVA source changes.
+- Disposition: comprehensive Linux unit-regression TESTED -> portable package/syntax and disposable installer behavior TESTED as additional exact-head evidence. Hosted CI remains BLOCKED, not staging-ready. Next: restore observable hosted jobs and require all five successful, including native macOS, Codex pin/build, checkout and Node gates. No further feature expansion or unchanged retry. Rollback: no actual installation; leave draft unmerged, disregard isolated test workspace. No production merges/deployments, credential changes, external messages, owned-host mutations or automation modifications.
+
+```text
+Sat Nov 28 12:57:54 UTC 2026
+Candidate 8b728937cccfe5e0d97c0b58dcb22095431a15df
+8ea87302c413633ca9ceefda7f2e56539fa66470  AGENTS.md
+9084fa2f716a7117829f3f32a5f4cef400e02903  docs/nova/VERSION
+4206b7b3e20f01294fc3066f66c1baf236520590  docs/nova/NOVA_BOOTSTRAP.md
+c0ebe86700fa942addfb8e5e01cc99bf0c7afd1c  docs/nova/PROJECT_CONTEXT.md
+88e9a77641c48188c343fef1abc6cf46bb330d72  docs/nova/DECISIONS.md
+c00074bc443eded1c7ac29813d0c310f33268bfc  docs/nova/SESSION_START.md
+1c6706dea223543ab978e5d8773a242c573175fe  docs/nova/PORTABILITY.md
+082f8c3ecdb38195d7d889b171963fe9967631ad  docs/nova/SECURITY.md
+0a7a2f862cdc39ea90ddde89167c46c3dca3b088  docs/nova/MAINTENANCE.md
+1491d716029f877b765f597e16b854cdcbfbd961  docs/nova/CHANGELOG.md
+4b5627b91a0acce2a59aa2d3ce1129232540d075  scripts/nova-bootstrap
+663bc084156e50df4cedfb1f12b243a8b1d78ed8  scripts/nova-install
+7e7fcda5752e5b7ad82fa681a3e5ef92b4377331  templates/nova/AGENTS.block.md
+dfd99783e6eda4bb5e7ec2c80af5f5a462995023  templates/nova/PROJECT_CONTEXT.md
+fa31c72738c2e34a266ffbb7eb8673c79574375b  templates/nova/DECISIONS.md
+d2610b21e0e79c9cef467d79079e7c256462e341bc6a14be1b4162f40ab6ca49  strict.log
+21e614c47a2e9c03c8764802ef133a5c4562d35e49406d3bc01433fbba9ddf42  syntax.log
+Strict check exit 0; three individual shell syntax checks exit 0; six Python compile checks exit 0
+7e33e1dc9792b4aacd9d6e8a909062db1515c3027e4e5b0627834193b7422a0a  install-acceptance.log
+Five disposable install acceptance assertions passed; no actual installation
+```
