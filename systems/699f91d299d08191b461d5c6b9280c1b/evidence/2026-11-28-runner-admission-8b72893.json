@@ -1,0 +1,273 @@
+{
+  "observed_at_utc": "2026-11-28T14:06:59Z",
+  "fingerprint": "UNOVA420/UNOVA|exact-head-ci-evidence-unavailable|8b728937cccfe5e0d97c0b58dcb22095431a15df|2026-11-28",
+  "head": "8b728937cccfe5e0d97c0b58dcb22095431a15df",
+  "previous_successful_head": "8fe8ffa375b747a71dad158216d23abfa7ea8b8e",
+  "groups": [
+    {
+      "run": 46128316057,
+      "attempt": 1,
+      "role": "candidate",
+      "total": 4,
+      "jobs": [
+        {
+          "id": 140927774148,
+          "name": "codex-pinned-checkout",
+          "conclusion": "failure",
+          "runner_id": 0,
+          "runner_name": "",
+          "step_count": 0,
+          "started_at": "2026-11-28T08:59:16Z",
+          "completed_at": "2026-11-28T08:59:18Z",
+          "duration_seconds": 2
+        },
+        {
+          "id": 140927774315,
+          "name": "offline-compatibility",
+          "conclusion": "failure",
+          "runner_id": 0,
+          "runner_name": "",
+          "step_count": 0,
+          "started_at": "2026-11-28T08:59:16Z",
+          "completed_at": "2026-11-28T08:59:19Z",
+          "duration_seconds": 3
+        },
+        {
+          "id": 140927774323,
+          "name": "canvas-native-owner",
+          "conclusion": "failure",
+          "runner_id": 0,
+          "runner_name": "",
+          "step_count": 0,
+          "started_at": "2026-11-28T08:59:16Z",
+          "completed_at": "2026-11-28T08:59:18Z",
+          "duration_seconds": 2
+        },
+        {
+          "id": 140927774501,
+          "name": "codex-native-apple-silicon",
+          "conclusion": "failure",
+          "runner_id": 0,
+          "runner_name": "",
+          "step_count": 0,
+          "started_at": "2026-11-28T08:59:16Z",
+          "completed_at": "2026-11-28T08:59:18Z",
+          "duration_seconds": 2
+        }
+      ]
+    },
+    {
+      "run": 46128316057,
+      "attempt": 2,
+      "role": "candidate",
+      "total": 4,
+      "jobs": [
+        {
+          "id": 140942807260,
+          "name": "codex-native-apple-silicon",
+          "conclusion": "failure",
+          "runner_id": 0,
+          "runner_name": "",
+          "step_count": 0,
+          "started_at": "2026-11-28T10:02:09Z",
+          "completed_at": "2026-11-28T10:02:11Z",
+          "duration_seconds": 2
+        },
+        {
+          "id": 140942807470,
+          "name": "canvas-native-owner",
+          "conclusion": "failure",
+          "runner_id": 0,
+          "runner_name": "",
+          "step_count": 0,
+          "started_at": "2026-11-28T10:02:09Z",
+          "completed_at": "2026-11-28T10:02:11Z",
+          "duration_seconds": 2
+        },
+        {
+          "id": 140942807474,
+          "name": "codex-pinned-checkout",
+          "conclusion": "failure",
+          "runner_id": 0,
+          "runner_name": "",
+          "step_count": 0,
+          "started_at": "2026-11-28T10:02:09Z",
+          "completed_at": "2026-11-28T10:02:11Z",
+          "duration_seconds": 2
+        },
+        {
+          "id": 140942807481,
+          "name": "offline-compatibility",
+          "conclusion": "failure",
+          "runner_id": 0,
+          "runner_name": "",
+          "step_count": 0,
+          "started_at": "2026-11-28T10:02:09Z",
+          "completed_at": "2026-11-28T10:02:12Z",
+          "duration_seconds": 3
+        }
+      ]
+    },
+    {
+      "run": 46128316069,
+      "attempt": 1,
+      "role": "candidate",
+      "total": 1,
+      "jobs": [
+        {
+          "id": 140927774266,
+          "name": "build",
+          "conclusion": "failure",
+          "runner_id": 0,
+          "runner_name": "",
+          "step_count": 0,
+          "started_at": "2026-11-28T08:59:16Z",
+          "completed_at": "2026-11-28T08:59:18Z",
+          "duration_seconds": 2
+        }
+      ]
+    },
+    {
+      "run": 46128316069,
+      "attempt": 2,
+      "role": "candidate",
+      "total": 1,
+      "jobs": [
+        {
+          "id": 140942812989,
+          "name": "build",
+          "conclusion": "failure",
+          "runner_id": 0,
+          "runner_name": "",
+          "step_count": 0,
+          "started_at": "2026-11-28T10:02:10Z",
+          "completed_at": "2026-11-28T10:02:13Z",
+          "duration_seconds": 3
+        }
+      ]
+    },
+    {
+      "run": 46123967681,
+      "attempt": 1,
+      "role": "successful_control",
+      "total": 4,
+      "jobs": [
+        {
+          "id": 140914310514,
+          "name": "canvas-native-owner",
+          "conclusion": "success",
+          "runner_id": 1000000448,
+          "runner_name": "GitHub Actions 1000000448",
+          "step_count": 12,
+          "started_at": "2026-11-28T08:02:53Z",
+          "completed_at": "2026-11-28T08:03:28Z",
+          "duration_seconds": 35
+        },
+        {
+          "id": 140914310683,
+          "name": "codex-native-apple-silicon",
+          "conclusion": "success",
+          "runner_id": 1000000452,
+          "runner_name": "GitHub Actions 1000000452",
+          "step_count": 10,
+          "started_at": "2026-11-28T08:02:54Z",
+          "completed_at": "2026-11-28T08:05:37Z",
+          "duration_seconds": 163
+        },
+        {
+          "id": 140914310684,
+          "name": "codex-pinned-checkout",
+          "conclusion": "success",
+          "runner_id": 1000000449,
+          "runner_name": "GitHub Actions 1000000449",
+          "step_count": 10,
+          "started_at": "2026-11-28T08:02:53Z",
+          "completed_at": "2026-11-28T08:06:28Z",
+          "duration_seconds": 215
+        },
+        {
+          "id": 140914310704,
+          "name": "offline-compatibility",
+          "conclusion": "success",
+          "runner_id": 1000000450,
+          "runner_name": "GitHub Actions 1000000450",
+          "step_count": 19,
+          "started_at": "2026-11-28T08:02:53Z",
+          "completed_at": "2026-11-28T08:03:21Z",
+          "duration_seconds": 28
+        }
+      ]
+    },
+    {
+      "run": 46123967684,
+      "attempt": 1,
+      "role": "successful_control",
+      "total": 1,
+      "jobs": [
+        {
+          "id": 140914310755,
+          "name": "build",
+          "conclusion": "success",
+          "runner_id": 1000000451,
+          "runner_name": "GitHub Actions 1000000451",
+          "step_count": 18,
+          "started_at": "2026-11-28T08:02:53Z",
+          "completed_at": "2026-11-28T08:03:18Z",
+          "duration_seconds": 25
+        }
+      ]
+    }
+  ],
+  "assertions": {
+    "all_failed_jobs_report_no_runner_and_no_steps": true,
+    "all_controls_have_runner_and_steps": true,
+    "one_commit_no_workflow_or_codex_changes": true,
+    "candidate_annotation_counts_present": true
+  },
+  "changed_files": [
+    "tests/test_canvas_proxy.py",
+    "tests/test_canvas_supervisor.py",
+    "ui/nova_canvas.py",
+    "unova_master.py"
+  ],
+  "candidate_checks": [
+    {
+      "id": 140942812989,
+      "name": "build",
+      "annotation_count": 1,
+      "annotation_url": "https://api.github.com/repos/UNOVA420/UNOVA/check-runs/140942812989/annotations"
+    },
+    {
+      "id": 140942807481,
+      "name": "offline-compatibility",
+      "annotation_count": 1,
+      "annotation_url": "https://api.github.com/repos/UNOVA420/UNOVA/check-runs/140942807481/annotations"
+    },
+    {
+      "id": 140942807474,
+      "name": "codex-pinned-checkout",
+      "annotation_count": 1,
+      "annotation_url": "https://api.github.com/repos/UNOVA420/UNOVA/check-runs/140942807474/annotations"
+    },
+    {
+      "id": 140942807470,
+      "name": "canvas-native-owner",
+      "annotation_count": 2,
+      "annotation_url": "https://api.github.com/repos/UNOVA420/UNOVA/check-runs/140942807470/annotations"
+    },
+    {
+      "id": 140942807260,
+      "name": "codex-native-apple-silicon",
+      "annotation_count": 2,
+      "annotation_url": "https://api.github.com/repos/UNOVA420/UNOVA/check-runs/140942807260/annotations"
+    }
+  ],
+  "disposition": "Hosted runner admission failure indicated; no evidence of a source test failure in these runs. Exact underlying provider reason unverified. Existing isolated Linux acceptance remains TESTED; hosted acceptance BLOCKED. Do not retry unchanged conditions.",
+  "limitations": [
+    "All five annotation endpoints rejected by connector allowed-endpoint policy; underlying diagnostic text unavailable.",
+    "MarcoPolo workspace and connection listing failed internally this run. Both owned Macs reported offline; disposable Linux lacks Rust compiler and GitHub DNS.",
+    "No fresh native compilation, exact-head full checkout or source execution claimed."
+  ],
+  "acceptance": "Obtain check annotation through authorized GitHub UI or API and resolve identified runner-admission cause; then require a single exact-head run with all five successful jobs, assigned runners and observable steps/logs.",
+  "rollback": "No source or runtime changes. Leave draft unmerged. Evidence-only commit can be reverted on isolated ledger branch if necessary."
+}
